@@ -3,11 +3,15 @@
 mod sysmodule;
 mod communication;
 mod async_communication;
+mod internal_bus;
+mod com;
+use std::borrow::Borrow;
+
 use sysmodule::transmitters::{P4Advanced, P4Basic, P4Hub};
 use communication::IdentityResolver;
 use sysmodule::{HubIndex,ModuleNeighborInfo};
 use tokio::task;
-use async_communication::{AsyncExternalBus};
+use async_communication::{AsyncGateway, DeadExternalBus};
 use tokio::task::JoinHandle;
 fn spawn_sysmodule( mut sysmodule: Box<dyn IdentityResolver + Send> ) -> JoinHandle<()>
 {
@@ -18,22 +22,21 @@ fn spawn_sysmodule( mut sysmodule: Box<dyn IdentityResolver + Send> ) -> JoinHan
 }
 #[tokio::main]
 async fn main() {
-    let (left, right ) = AsyncExternalBus::new();
+    let (left, right ) = AsyncGateway::new();
     let basic= P4Basic::new(
-        left
+        Box::new(left)
     );
-    let (hub_to_adv, adv_to_hub) = AsyncExternalBus::new();
-
+    let (hub_to_adv, adv_to_hub) = AsyncGateway::new();
 
     let advanced = P4Advanced::new(
-        adv_to_hub,
-        right,
+        Box::new(adv_to_hub),
+        Box::new(right),
     );
 
     
     let hub = P4Hub::new(
         [
-            Some(hub_to_adv),
+            Some(Box::new(hub_to_adv)),
             None,
             None,
             None

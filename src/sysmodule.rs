@@ -1,4 +1,4 @@
-use crate::async_communication::{ AsyncExternalBus, ChannelEvent::{DeadChannel, Message, RunProcedure}};
+use crate::async_communication::{ ChannelEvent::{DeadChannel, Message, RunProcedure}};
 use std::net::{Ipv4Addr};
 use ipnet::{Ipv4AddrRange, Ipv4Net, Ipv4Subnets};
 use async_trait::async_trait;
@@ -36,11 +36,11 @@ pub enum ModuleNeighborInfo {
 }
 
 pub mod transmitters {
-    use crate::{communication::IdentityResolver, async_communication::{ChannelEvent, IPMessage}};
+    use crate::{communication::IdentityResolver, async_communication::{ChannelEvent, IPMessage, AsyncChannel}};
 
     pub use super::*;
     pub struct P4Basic {
-        parent: AsyncExternalBus,
+        parent: Box<dyn AsyncChannel<ChannelEvent>> ,
         address_mask: Ipv4Addr,
     }
     const DISCOVERY_ADDRESS: Ipv4Addr = Ipv4Addr::new(255,255,255,255);
@@ -75,7 +75,7 @@ pub mod transmitters {
 
 
     impl P4Basic {
-        pub fn new(parent: AsyncExternalBus) -> Self {
+        pub fn new(parent: Box<dyn AsyncChannel<ChannelEvent>>) -> Self {
             Self { parent, address_mask: Ipv4Addr::UNSPECIFIED }
         }
 
@@ -87,7 +87,7 @@ pub mod transmitters {
     #[async_trait]
     impl IdentityResolver for P4Basic{
         async fn discover_identity(&mut self) {
-            self.parent.send( ModuleNeighborInfo::Basic.into());
+            self.parent.send( Message(ModuleNeighborInfo::Basic.into()));
             println!("sending p4 identity");
             let incoming_event = self.parent.receive().await;
             let state: ModuleNeighborInfo = incoming_event.try_into().expect("could not receive in P4 basic");
@@ -96,11 +96,11 @@ pub mod transmitters {
     }
 
     pub struct P4Advanced {
-        parent: AsyncExternalBus,
-        child: AsyncExternalBus,
+        parent: Box<dyn AsyncChannel<ChannelEvent>>,
+        child: Box<dyn AsyncChannel<ChannelEvent>>,
     }
     impl P4Advanced {
-        pub fn new(parent: AsyncExternalBus, child: AsyncExternalBus) -> Self {
+        pub fn new(parent: Box<dyn AsyncChannel<ChannelEvent>>, child: Box<dyn AsyncChannel<ChannelEvent>>) -> Self {
             Self { parent, child }
         }
     }
@@ -122,8 +122,8 @@ pub mod transmitters {
             };
 
             println!("state of advanced: {:?}", &state);
-            self.child.send( state.clone().into());
-            self.parent.send(state.clone().into());
+            self.child.send(Message(state.clone().into()));
+            self.parent.send(Message(state.clone().into()));
         }
 
     }
@@ -131,10 +131,10 @@ pub mod transmitters {
     const HUB_NUM_CHILDREN: usize = 4;
 
     pub struct P4Hub {
-        children: [Option<AsyncExternalBus>; HUB_NUM_CHILDREN],
+        children: [Option<Box<dyn AsyncChannel<ChannelEvent>>>; HUB_NUM_CHILDREN],
     }
     impl P4Hub {
-        pub fn new(children: [Option<AsyncExternalBus>; HUB_NUM_CHILDREN]) -> Self {
+        pub fn new(children: [Option<Box<dyn AsyncChannel<ChannelEvent>>>; HUB_NUM_CHILDREN]) -> Self {
             Self { children }
         }
     }
@@ -144,7 +144,7 @@ pub mod transmitters {
             for elem in 0..HUB_NUM_CHILDREN{
                 let idx: HubIndex = elem.try_into().unwrap();
                 if let Some(bus) = &mut self.children[elem] {
-                    bus.send(Hub(idx).into());
+                    bus.send(Message(Hub(idx).into()));
                     let neighbor_id: ModuleNeighborInfo = bus.receive().await.try_into().expect("could not figure out identity");
                     println!("neighbor identity for channel {:?}: {:?}", idx, neighbor_id );
                 }

@@ -1,4 +1,3 @@
-use std::sync::{Arc};
 use crate::sysmodule::{HubIndex, ModuleNeighborInfo};
 use bichannel::{channel, Channel};
 use async_trait::async_trait;
