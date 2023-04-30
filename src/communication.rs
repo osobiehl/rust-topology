@@ -1,7 +1,7 @@
 use std::sync::{Arc};
 use crate::sysmodule::{HubIndex, ModuleNeighborInfo};
 use bichannel::{channel, Channel};
-
+use async_trait::async_trait;
 pub trait ExternalBus: Send{
     // todo await identity
     fn receive_neighbor_identity(&mut self) -> Option<ModuleNeighborInfo>;
@@ -24,7 +24,7 @@ impl BlockingExternalBus{
             Self { line: Some( left) }
         )
     }
-      
+
     pub fn new_empty() -> Self {
         return Self { line: None};
     }
@@ -49,6 +49,7 @@ impl ExternalBus for BlockingExternalBus{
     }
 }
 
+#[async_trait]
 pub trait IdentityResolver{
-     fn discover_identity(&mut self);
+     async fn discover_identity(&mut self);
 }

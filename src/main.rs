@@ -1,53 +1,50 @@
 
+#![feature(async_closure)]
 mod sysmodule;
 mod communication;
+mod async_communication;
 use sysmodule::transmitters::{P4Advanced, P4Basic, P4Hub};
 use communication::IdentityResolver;
-use sysmodule::{BasicTransmitter, HubIndex,ModuleNeighborInfo};
-use communication::BlockingExternalBus;
-use bichannel::{Channel, channel};
-use std::{thread::{self, JoinHandle}, time::Duration};
-
+use sysmodule::{HubIndex,ModuleNeighborInfo};
+use tokio::task;
+use async_communication::{AsyncExternalBus};
+use tokio::task::JoinHandle;
 fn spawn_sysmodule( mut sysmodule: Box<dyn IdentityResolver + Send> ) -> JoinHandle<()>
 {
-    thread::spawn(move || 
-    {
-        sysmodule.discover_identity();
-        thread::sleep(Duration::from_secs(1));
-    })
+        tokio::task::spawn(async move {
+                sysmodule.discover_identity().await;
+                
+        })
 }
-
-fn main() {
-    let (left, right ) = BlockingExternalBus::new();
+#[tokio::main]
+async fn main() {
+    let (left, right ) = AsyncExternalBus::new();
     let basic= P4Basic::new(
-        Box::new(left)
+        left
     );
-    let (hub_to_adv, adv_to_hub) = BlockingExternalBus::new();
-
+    let (hub_to_adv, adv_to_hub) = AsyncExternalBus::new();
 
 
     let advanced = P4Advanced::new(
-        Box::new(adv_to_hub), 
-        Box::new(right)
+        adv_to_hub,
+        right,
     );
 
     
     let hub = P4Hub::new(
         [
-            Some(Box::new( hub_to_adv)),
+            Some(hub_to_adv),
             None,
             None,
             None
         ]
     );
+    let a = spawn_sysmodule(Box::new(basic));
+    let b = spawn_sysmodule(Box::new(advanced));
+    let c = spawn_sysmodule(Box::new(hub));
 
-
-    let x = spawn_sysmodule(Box::new(basic));
-    let y = spawn_sysmodule(Box::new(advanced));
-    let z = spawn_sysmodule(Box::new(hub));
-
-    let _ = x.join();
-    let _ = y.join();
-    let _ = z.join();
+    _ = a.await;
+    _ = b.await;
+    _ = c.await;    
 
 }
