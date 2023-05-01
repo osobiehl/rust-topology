@@ -30,7 +30,6 @@ async fn main() {
     let mut basic = P4Basic::new(Box::new(basic));
 
     let dead = DeadExternalBus {};
-    let dead2 = DeadExternalBus {};
     let advanced = P4Advanced::new(Some(Box::new(dead)), Some(Box::new(adv)));
     let hmi_send = advanced.hmi.1.clone();
 
