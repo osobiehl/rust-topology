@@ -1,14 +1,14 @@
-use crate::async_communication::AsyncGateway;
+use crate::async_communication::{AsyncGateway, IPMessage};
 
 use crate::{
-    async_communication::{AsyncChannel, ChannelEvent},
+    async_communication::AsyncChannel,
     internal_bus,
     sysmodules::{com::*, common::*},
-    utils::spawn_sysmodule
+    utils::spawn_sysmodule,
 };
 use internal_bus::InternalBus;
-use tokio::task::JoinHandle;
 use std::net::Ipv4Addr;
+use tokio::task::JoinHandle;
 // basic p4
 pub struct P4Basic {
     pub pv: (PV, TestingSender),
@@ -18,7 +18,7 @@ pub struct P4Basic {
 }
 
 impl P4Basic {
-    pub fn new(parent: Box<dyn AsyncChannel<ChannelEvent>>) -> Self {
+    pub fn new(parent: Box<dyn AsyncChannel<IPMessage>>) -> Self {
         let mut bus = InternalBus::new();
         let (pv, ib_pv) = AsyncGateway::new();
         let (com, ib_com) = AsyncGateway::new();
@@ -52,10 +52,10 @@ impl P4Basic {
     ///
     /// starts a P4 simulation
     pub async fn start(mut self) {
-        let pv = spawn_sysmodule(self.pv.0.0);
+        let pv = spawn_sysmodule(self.pv.0 .0);
         let hmi = spawn_sysmodule(self.hmi.0 .0);
-        let com =  spawn_sysmodule(self.com.0);
-        
+        let com = spawn_sysmodule(self.com.0);
+
         let bus = tokio::spawn(async move {
             loop {
                 self.bus.run_once().await;
