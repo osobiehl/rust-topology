@@ -1,18 +1,25 @@
 
 #![feature(async_closure)]
+mod utils;
 mod sysmodule;
 mod communication;
 mod async_communication;
 mod internal_bus;
-mod com;
-use std::borrow::Borrow;
+mod sysmodules;
+mod p4_basic;
+mod p4_advanced;
 
-use sysmodule::transmitters::{P4Advanced, P4Basic, P4Hub};
+use std::net::Ipv4Addr;
+
 use communication::IdentityResolver;
 use sysmodule::{HubIndex,ModuleNeighborInfo};
+use sysmodules::common::SysModule;
 use tokio::task;
-use async_communication::{AsyncGateway, DeadExternalBus};
+use async_communication::{AsyncGateway, DeadExternalBus, SysmoduleRPC};
 use tokio::task::JoinHandle;
+use futures::future::{BoxFuture,FutureExt};
+use p4_basic::P4Basic;
+use p4_advanced::P4Advanced;
 fn spawn_sysmodule( mut sysmodule: Box<dyn IdentityResolver + Send> ) -> JoinHandle<()>
 {
         tokio::task::spawn(async move {
@@ -22,32 +29,42 @@ fn spawn_sysmodule( mut sysmodule: Box<dyn IdentityResolver + Send> ) -> JoinHan
 }
 #[tokio::main]
 async fn main() {
-    let (left, right ) = AsyncGateway::new();
-    let basic= P4Basic::new(
-        Box::new(left)
-    );
-    let (hub_to_adv, adv_to_hub) = AsyncGateway::new();
+    let (basic, adv) = AsyncGateway::new();     
+    let mut basic = P4Basic::new(Box::new(basic));
 
-    let advanced = P4Advanced::new(
-        Box::new(adv_to_hub),
-        Box::new(right),
-    );
+
+    let dead = DeadExternalBus {};
+    let dead2 = DeadExternalBus {};
+    let advanced = P4Advanced::new(Some(Box::new(dead)),Some(Box::new(dead2)));
+    let hmi_send = advanced.hmi.1.clone();
+
 
     
-    let hub = P4Hub::new(
-        [
-            Some(Box::new(hub_to_adv)),
-            None,
-            None,
-            None
-        ]
-    );
-    let a = spawn_sysmodule(Box::new(basic));
-    let b = spawn_sysmodule(Box::new(advanced));
-    let c = spawn_sysmodule(Box::new(hub));
+    
+    let end_adv = tokio::spawn(async move {
+        advanced.start().await;
+    });
+    let end = tokio::spawn( async move {
+        basic.start().await;
+    });
 
-    _ = a.await;
-    _ = b.await;
-    _ = c.await;    
+    let mut f = async move |sys: &mut dyn SysModule| {sys.send((Ipv4Addr::new(0,0,0,0), "hello".to_string()))};
+    let func: SysmoduleRPC = Box::new( move |sys: &mut dyn SysModule| 
+    {
+        return async
+        {
+            sys.send((Ipv4Addr::new(0,0,0,0), "hello from hmi".to_string()));
+
+        }.boxed()
+    });
+    
+    hmi_send.send( 
+    func);
+    
+
+    end.await;
+    end_adv.await;
+
+
 
 }

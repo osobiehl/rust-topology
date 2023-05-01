@@ -1,16 +1,22 @@
 use bichannel::Channel;
+use futures::{select, FutureExt};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::time;
 use std::fmt::Debug;
 use std::net::{Ipv4Addr};
 use std::future::Future;
+use std::pin::Pin;
+use std::time::Duration;
+use futures::future::BoxFuture;
+
+use crate::sysmodules::common::SysModule;
 
 pub type IPMessage = ( Ipv4Addr, String);
-type SysmoduleRPC = Box<dyn Fn(&mut dyn Sysmodule) -> Box<dyn Future<Output=()>> + Send>;
+pub type SysmoduleRPC = Box<dyn FnOnce(&mut dyn SysModule) -> BoxFuture<()> + Send>;
 
 pub enum ChannelEvent{
     DeadChannel,
-    RunProcedure( SysmoduleRPC ), // run a specific test command
     Message( IPMessage )
 }
 
@@ -19,13 +25,11 @@ impl Debug for ChannelEvent{
         let x = match self {
 
             DeadChannel => f.write_str("DeadChannel"),
-            Self::RunProcedure(_) =>  f.write_str("RunProcedure"),
             Self::Message(msg) => f.write_fmt(format_args!("IP: {}, message: {}",msg.0, msg.1 ))
         };
         return std::fmt::Result::Ok(());
     }
 }
-
 pub struct AsyncGateway<T>{
     tx: UnboundedSender<T>,
     rx: UnboundedReceiver<T>,
@@ -52,6 +56,16 @@ pub trait AsyncChannel<T>: Send{
     fn send(&mut self, msg: T);
     async fn receive(&mut self) ->T;
 
+    async fn try_receive(&mut self, timeout: Duration)->Option<T>
+    {
+        let ans = select! {
+            x = self.receive().fuse() => Some(x),
+            _ = tokio::time::sleep(timeout).fuse() => None
+        };
+        return ans;
+    }
+
+
 }
 #[async_trait::async_trait]
 impl<T: std::marker::Send + Debug> AsyncChannel<T> for AsyncGateway<T>{
@@ -62,6 +76,9 @@ impl<T: std::marker::Send + Debug> AsyncChannel<T> for AsyncGateway<T>{
     async fn receive(&mut self) -> T {
         return self.rx.recv().await.expect("channel closed prematurely");
     }
+
+
+
 }
 
 pub struct DeadExternalBus{}
@@ -75,10 +92,4 @@ impl AsyncChannel<ChannelEvent> for DeadExternalBus{
         // no-op
     }
 }
-// a sysmodule can either receive data on a channel, or it can also be prompted to run an algorithm
-pub trait Sysmodule{
-    // testing method to make sure correct things happen on receive
-    fn on_next_receive( &mut self, when_received: Box<dyn FnOnce( &mut dyn Sysmodule)> );
-    // send a message, the Sysmodule determines exactly how this is done
-    fn send(&mut self, message: IPMessage);
-}
+

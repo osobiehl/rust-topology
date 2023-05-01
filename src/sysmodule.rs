@@ -1,4 +1,4 @@
-use crate::async_communication::{ ChannelEvent::{DeadChannel, Message, RunProcedure}};
+use crate::async_communication::{ ChannelEvent::{DeadChannel, Message}};
 use std::net::{Ipv4Addr};
 use ipnet::{Ipv4AddrRange, Ipv4Net, Ipv4Subnets};
 use async_trait::async_trait;
@@ -58,7 +58,6 @@ pub mod transmitters {
         fn try_into(self) -> Result<ModuleNeighborInfo, Self::Error> {
             return match self{
                 DeadChannel => Ok(ModuleNeighborInfo::NoNeighbor),
-                RunProcedure(_) => Err(()),
                 Message(m) =>  parse_discovery_message(m)
             }
         }
