@@ -4,7 +4,7 @@ use crate::{
     async_communication::AsyncChannel,
     internal_bus,
     sysmodules::{com::*, common::*},
-    utils::spawn_sysmodule,
+    utils::{spawn_sysmodule, new_basic},
 };
 use internal_bus::InternalBus;
 use std::net::Ipv4Addr;
@@ -16,14 +16,6 @@ pub struct P4Advanced {
     pub adv_to_basic: Option<(Com, TestingSender)>,
     pub hmi: (HMI, TestingSender),
     pub bus: InternalBus,
-}
-pub fn new_basic(
-    initial_address: Ipv4Addr,
-) -> (BasicModule, AsyncGateway<IPMessage>, TestingSender) {
-    let (mod_to_ibus, ibus_to_mod) = AsyncGateway::new();
-    let (mod_test_tx, mod_test_rx) = tokio::sync::mpsc::unbounded_channel();
-    let module = BasicModule::new(mod_to_ibus, mod_test_rx, initial_address);
-    return (module, ibus_to_mod, mod_test_tx);
 }
 
 impl P4Advanced {

@@ -1,5 +1,6 @@
 use crate::async_communication::{AsyncGateway, IPMessage};
 
+use crate::utils::new_basic;
 use crate::{
     async_communication::AsyncChannel,
     internal_bus,
@@ -20,21 +21,14 @@ pub struct P4Basic {
 impl P4Basic {
     pub fn new(parent: Box<dyn AsyncChannel<IPMessage>>) -> Self {
         let mut bus = InternalBus::new();
-        let (pv, ib_pv) = AsyncGateway::new();
-        let (com, ib_com) = AsyncGateway::new();
-        let (hmi, ib_hmi) = AsyncGateway::new();
 
+        let ( pv, ib_pv, pv_test_tx) = new_basic(Ipv4Addr::UNSPECIFIED);
+        let (com, ib_com, com_test_tx) = new_basic(Ipv4Addr::UNSPECIFIED);
+        let (hmi, ib_hmi, hmi_test_tx) = new_basic(Ipv4Addr::UNSPECIFIED);
+        
         bus.subscribe(ib_com);
         bus.subscribe(ib_hmi);
         bus.subscribe(ib_pv);
-
-        let (com_test_tx, com_test_rx) = tokio::sync::mpsc::unbounded_channel();
-        let (pv_test_tx, pv_test_rx) = tokio::sync::mpsc::unbounded_channel();
-        let (hmi_test_tx, hmi_test_rx) = tokio::sync::mpsc::unbounded_channel();
-
-        let com = BasicModule::new(com, com_test_rx, Ipv4Addr::UNSPECIFIED);
-        let pv = BasicModule::new(pv, pv_test_rx, Ipv4Addr::UNSPECIFIED);
-        let hmi = BasicModule::new(hmi, hmi_test_rx, Ipv4Addr::UNSPECIFIED);
 
         let com_module = Com::new(parent, com, ComType::Basic);
 
