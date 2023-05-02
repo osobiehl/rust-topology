@@ -26,7 +26,7 @@ fn spawn_sysmodule(mut sysmodule: Box<dyn IdentityResolver + Send>) -> JoinHandl
 }
 #[tokio::main]
 async fn main() {
-    
+
     let (basic, adv) = AsyncGateway::new();
     let mut basic = P4Basic::new(Box::new(basic));
 
@@ -56,4 +56,35 @@ async fn main() {
 
     end.await;
     end_adv.await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_advanced_basic() {
+    let (basic, adv) = AsyncGateway::new();
+    let mut basic = P4Basic::new(Box::new(basic));
+
+    let dead = DeadExternalBus {};
+    let advanced = P4Advanced::new(Some(Box::new(dead)), Some(Box::new(adv)));
+    let com_send = basic.com.1.clone();
+
+    let end_adv = tokio::spawn(async move {
+        advanced.start().await;
+    });
+    let end = tokio::spawn(async move {
+        basic.start().await;
+    });
+    let mut f = async move |sys: &mut dyn SysModule| {sys.send((Ipv4Addr::new(0,0,0,0), "hello".to_string()))};
+    let func: SysmoduleRPC = Box::new( move |sys: &mut dyn SysModule|
+    {
+        return async
+        {
+            sys.send((Ipv4Addr::new(0,0,0,0), "hello from com".to_string()));
+
+        }.boxed()
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    com_send.send(
+    func);
+    // end_adv.await;
+    // end.await;
 }
