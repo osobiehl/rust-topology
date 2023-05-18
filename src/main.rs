@@ -7,6 +7,7 @@ mod p4_basic;
 mod sysmodule;
 mod sysmodules;
 mod utils;
+mod net;
 
 use std::net::Ipv4Addr;
 

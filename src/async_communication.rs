@@ -15,6 +15,8 @@ use crate::sysmodules::common::SysModule;
 pub type IPMessage = (Ipv4Addr, String);
 pub type SysmoduleRPC = Box<dyn FnOnce(&mut dyn SysModule) -> BoxFuture<()> + Send>;
 
+
+
 pub struct AsyncGateway<T> {
     tx: UnboundedSender<T>,
     rx: UnboundedReceiver<T>,
