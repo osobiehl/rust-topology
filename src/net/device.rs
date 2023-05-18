@@ -5,7 +5,7 @@ use smoltcp::wire::{EthernetAddress, IpCidr};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use rand::prelude::*;
 
-struct TokioChannel {
+pub struct TokioChannel {
     rx: UnboundedReceiver<Vec<u8>>,
     tx: UnboundedSender<Vec<u8>>,
 }
@@ -30,8 +30,9 @@ impl smoltcp::phy::TxToken for STDTx {
         F: FnOnce(&mut [u8]) -> R,
     {
         let mut bytes = Vec::with_capacity(len);
-        let res = f(&mut bytes);
-        self.0.send(bytes);
+        unsafe {bytes.set_len(len)};
+        let res = f(&mut bytes[..]);
+        self.0.send(bytes).expect("could not send Tx!");
         return res;
     }
 }
@@ -43,6 +44,7 @@ impl Device for TokioChannel {
     fn capabilities(&self) -> DeviceCapabilities {
         let mut d = DeviceCapabilities::default();
         d.medium = Medium::Ip;
+        d.max_transmission_unit = 65000;
         return d ;
     }
 
@@ -63,11 +65,11 @@ impl TokioChannel {
     }
 }
 
-fn setup_if<D: phy::Device>( ip_address: IpCidr, mac_address: EthernetAddress, device: &mut D ) -> Box<Interface> {
+pub fn setup_if<D: phy::Device>( ip_address: IpCidr, device: &mut D ) -> Box<Interface> {
     let _file_path = "output.txt";
     let mut config = Config::default();
     config.random_seed = random();
-    config.hardware_addr = Some(smoltcp::wire::HardwareAddress::Ethernet(mac_address)); //TODO remove;
+    config.hardware_addr = None;
     
     let mut netif = Interface::new(config, device);
     netif.update_ip_addrs(|addrs| {
