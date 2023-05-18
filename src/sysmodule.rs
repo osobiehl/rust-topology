@@ -1,5 +1,5 @@
-use async_trait::async_trait;
-use ipnet::{Ipv4AddrRange, Ipv4Net, Ipv4Subnets};
+
+
 use std::net::Ipv4Addr;
 // class B subnet borrowing 4 bits ??
 use serde::{Deserialize, Serialize};
@@ -34,8 +34,7 @@ pub enum ModuleNeighborInfo {
     Advanced(Option<HubIndex>, Option<BasicTransmitter>), // advanced: can be root, middle component, or leaf
 }
 use crate::{
-    async_communication::{AsyncChannel, IPMessage},
-    communication::IdentityResolver,
+    async_communication::{IPMessage},
 };
 impl TryInto<ModuleNeighborInfo> for IPMessage {
     type Error = ();

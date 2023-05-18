@@ -1,4 +1,4 @@
-use crate::sysmodule::{HubIndex, ModuleNeighborInfo};
+use crate::sysmodule::{ModuleNeighborInfo};
 use async_trait::async_trait;
 use bichannel::{channel, Channel};
 pub trait ExternalBus: Send {

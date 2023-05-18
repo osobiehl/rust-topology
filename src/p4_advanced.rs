@@ -1,4 +1,4 @@
-use crate::async_communication::{AsyncGateway, IPMessage};
+use crate::async_communication::{IPMessage};
 
 use crate::{
     async_communication::AsyncChannel,
@@ -8,7 +8,7 @@ use crate::{
 };
 use internal_bus::InternalBus;
 use std::net::Ipv4Addr;
-use tokio::task::JoinHandle;
+
 // basic p4
 pub struct P4Advanced {
     pub pv: Option<(PV, TestingSender)>,

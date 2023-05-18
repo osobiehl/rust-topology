@@ -1,9 +1,9 @@
 use crate::async_communication::{AsyncGateway, IPMessage, SysmoduleRPC};
-use crate::{async_communication::AsyncChannel, sysmodule::HubIndex};
+use crate::{async_communication::AsyncChannel};
 use async_trait::async_trait;
 use either::Either;
 use std::net::Ipv4Addr;
-use std::pin::Pin;
+
 use std::time::Duration;
 use tokio::select;
 use tokio::sync::mpsc::UnboundedReceiver;

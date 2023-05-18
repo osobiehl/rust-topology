@@ -1,7 +1,7 @@
 use smoltcp::iface::{Interface, Config};
 use smoltcp::phy::{Device, DeviceCapabilities, self, Medium};
 use smoltcp::time::Instant;
-use smoltcp::wire::{EthernetAddress, IpCidr, IpProtocol, Ipv4Packet, Ipv4Repr, Ipv4Cidr};
+use smoltcp::wire::{EthernetAddress, IpCidr};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use rand::prelude::*;
 
@@ -46,14 +46,14 @@ impl Device for TokioChannel {
         return d ;
     }
 
-    fn receive(&mut self, timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+    fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
         if let Ok(v) = self.rx.try_recv() {
             return Some((STDRx(v), STDTx(self.tx.clone())));
         }
         return None;
     }
 
-    fn transmit(&mut self, timestamp: Instant) -> Option<Self::TxToken<'_>> {
+    fn transmit(&mut self, _timestamp: Instant) -> Option<Self::TxToken<'_>> {
         Some(STDTx(self.tx.clone()))
     }
 }
@@ -64,7 +64,7 @@ impl TokioChannel {
 }
 
 fn setup_if<D: phy::Device>( ip_address: IpCidr, mac_address: EthernetAddress, device: &mut D ) -> Box<Interface> {
-    let file_path = "output.txt";
+    let _file_path = "output.txt";
     let mut config = Config::default();
     config.random_seed = random();
     config.hardware_addr = Some(smoltcp::wire::HardwareAddress::Ethernet(mac_address)); //TODO remove;

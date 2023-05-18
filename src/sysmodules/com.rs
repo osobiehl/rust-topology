@@ -143,7 +143,7 @@ impl SysModule for Com {
         }
     }
 
-    fn send(&mut self, msg: IPMessage) {
+    fn send(&mut self, _msg: IPMessage) {
         //
         todo!("decide routing for sysmodule")
         // no-op

@@ -2,9 +2,8 @@ use crate::async_communication::AsyncGateway;
 use crate::async_communication::IPMessage;
 use std::net::Ipv4Addr;
 use crate::{
-    async_communication::AsyncChannel,
     internal_bus,
-    sysmodules::{com::*, common::*},
+    sysmodules::{common::*},
 };
 
 pub fn new_basic(
@@ -16,7 +15,7 @@ pub fn new_basic(
     return (module, ibus_to_mod, mod_test_tx);
 }
 
-use internal_bus::InternalBus;
+
 use tokio::task::JoinHandle;
 
 pub fn spawn_sysmodule<M: SysModuleStartup + Send + 'static>(mut module: M) -> JoinHandle<()> {
