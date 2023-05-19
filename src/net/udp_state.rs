@@ -1,18 +1,18 @@
 use crate::async_communication::AsyncChannel;
-use crate::net::device::{STDRx,STDTx, setup_if};
+
 use futures::FutureExt;
-use ipnet::IpAdd;
-use log::{info, trace};
-use smoltcp::socket::udp::PacketBuffer;
-use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address, Ipv6Address, IpEndpoint, IpListenEndpoint};
-use smoltcp::socket::{tcp, udp};
-use smoltcp::iface::{Config, Interface, SocketSet, SocketHandle};
+
+use log::{trace};
+
+use smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint};
+use smoltcp::socket::{udp};
+use smoltcp::iface::{SocketSet, SocketHandle};
 use smoltcp::time::Instant;
 use std::sync::Arc;
-use std::task::{Poll, Context};
+use std::task::{Poll};
 use std::time::Duration;
 use tokio::sync::Mutex;
-use std::pin::Pin;
+
 use std::future::Future;
 use async_trait::async_trait;
 #[async_trait]
@@ -63,7 +63,7 @@ pub struct UDPSocketRead<'b , D: AsyncDevice>(
 
 
 use futures::pin_mut;
-use crate::net::device::{AsyncDevice, AsyncGatewayDevice};
+use crate::net::device::{AsyncDevice};
 pub type UdpResult = Result<UdpResponse, ()>;
 impl< 'b , D: AsyncDevice > std::future::Future for UDPSocketRead<'b, D>{
     type Output = UdpResult;
@@ -73,7 +73,7 @@ impl< 'b , D: AsyncDevice > std::future::Future for UDPSocketRead<'b, D>{
         let Poll::Ready(mut state) = fut.poll(cx) else {
             return Poll::Pending;
         };
-        for mut netif in &mut state.netifs{
+        for netif in &mut state.netifs{
             let mut r = AsyncChannel::receive(netif.device.as_mut());
             let y = r.poll_unpin(cx);
             drop(r);
@@ -139,7 +139,7 @@ impl<'a, D: AsyncDevice> UDPState< D>{
   
             let mut done = false;
             for iface in &mut self.netifs{
-                let mut found: bool = false;
+                let _found: bool = false;
                 let found = iface.iface.ip_addrs().iter().find( |cidr| cidr.contains_addr(endpoint) );
                 if let Some(x) = found {
                     let timestamp = Instant::now();

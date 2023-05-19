@@ -1,13 +1,12 @@
-use std::net::Ipv4Addr;
+
 use std::time::Duration;
 
 use super::common::{BasicModule, SysModuleStartup};
-use crate::async_communication::{AsyncChannel};
+
 use crate::sysmodule::{
-    BasicTransmitter, HubIndex,
-    ModuleNeighborInfo::{self, Advanced, Basic, Hub, NoNeighbor},
+    HubIndex,
 };
-use tokio::select;
+
 
 #[derive(Clone, Copy, Debug)]
 pub enum ComType {
@@ -54,7 +53,7 @@ impl Com {
         }
     }
 
-    async fn configure_hub(&mut self, i: HubIndex) {
+    async fn configure_hub(&mut self, _i: HubIndex) {
         todo!();
         // self.external_bus.send(ModuleNeighborInfo::Hub(i).into());
         // let neighbor_id: ModuleNeighborInfo = self

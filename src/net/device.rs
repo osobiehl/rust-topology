@@ -1,12 +1,12 @@
 use std::time::Duration;
 
 use smoltcp::iface::{Interface, Config};
-use smoltcp::phy::{Device, DeviceCapabilities, self, Medium};
+use smoltcp::phy::{Device, DeviceCapabilities, Medium};
 use smoltcp::time::Instant;
-use smoltcp::wire::{EthernetAddress, IpCidr};
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use smoltcp::wire::{IpCidr};
+use tokio::sync::mpsc::{UnboundedSender};
 use rand::prelude::*;
-use crate::async_communication::{AsyncGateway, AsyncChannel};
+use crate::async_communication::{AsyncChannel};
 pub struct STDRx(pub(crate) Vec<u8>);
 impl smoltcp::phy::RxToken for STDRx {
     fn consume<R, F>(self, f: F) -> R
