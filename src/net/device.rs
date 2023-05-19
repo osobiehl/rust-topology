@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use smoltcp::iface::{Interface, Config};
 use smoltcp::phy::{Device, DeviceCapabilities, self, Medium};
 use smoltcp::time::Instant;
@@ -31,9 +33,59 @@ impl smoltcp::phy::TxToken for STDTx {
     }
 }
 
-impl Device for AsyncGateway<Vec<u8>> {
-    type RxToken<'a> = STDRx;
-    type TxToken<'a> = STDTx;
+pub struct AsyncGatewayDevice<T: AsyncChannel<Vec<u8>>>{
+    pub cached: Vec<Vec<u8>>,
+    pub gateway: T
+}
+
+impl<T: AsyncChannel<Vec<u8>>> AsyncGatewayDevice<T>{
+    pub fn new( gateway:  T) -> Self{
+        return Self { cached: vec![], gateway };
+    }
+}
+#[async_trait::async_trait]
+impl<T: AsyncChannel<Vec<u8>>>  AsyncChannel<Vec<u8>> for AsyncGatewayDevice<T>{
+    fn send(&mut self, msg: Vec<u8>){
+        self.gateway.send(msg);
+    }
+    async fn receive(&mut self) -> Vec<u8>{
+        self.gateway.receive().await
+    }
+
+    async fn receive_with_timeout(&mut self, timeout: Duration) -> Option<Vec<u8>>{
+        self.gateway.receive_with_timeout(timeout).await
+    }
+
+    fn try_receive(&mut self) -> Option<Vec<u8>>{
+        self.gateway.try_receive()
+    }
+
+    fn sender(&self) -> UnboundedSender<Vec<u8>>
+    {
+        self.gateway.sender()
+    }
+
+}
+
+pub trait AsyncDevice: Device + AsyncChannel<Vec<u8>>{
+    fn inject_frame(&mut self, frame: Vec<u8>);
+}
+
+impl<T: AsyncChannel<Vec<u8>>> AsyncDevice for AsyncGatewayDevice<T>{
+    fn inject_frame(&mut self, frame: Vec<u8>) {
+        self.cached.push(frame);
+    }
+}
+
+impl<T: AsyncChannel<Vec<u8>>> Into<AsyncGatewayDevice<T>> for (T, ){
+    fn into(self) -> AsyncGatewayDevice<T> {
+        return AsyncGatewayDevice { cached: vec![], gateway: self.0 }
+    }
+}
+
+impl<T: AsyncChannel<Vec<u8>>>  Device for AsyncGatewayDevice<T> {
+    type RxToken<'a> = STDRx where T: 'a; 
+    type TxToken<'a> = STDTx where T: 'a;
 
     fn capabilities(&self) -> DeviceCapabilities {
         let mut d = DeviceCapabilities::default();
@@ -44,22 +96,28 @@ impl Device for AsyncGateway<Vec<u8>> {
     }
 
     fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
-        if let Some(v) = self.try_receive() {
-            return Some((STDRx(v), STDTx(self.tx.clone())));
+        if let Some(v) = self.cached.pop(){
+            return Some((STDRx(v), STDTx(self.gateway.sender())));
+        }
+        else if let Some(v) = self.gateway.try_receive() {
+            return Some((STDRx(v), STDTx(self.gateway.sender())));
         }
         return None;
     }
 
     fn transmit(&mut self, _timestamp: Instant) -> Option<Self::TxToken<'_>> {
-        Some(STDTx(self.tx.clone()))
+        Some(STDTx(self.gateway.sender()))
     }
 }
-pub struct  NetifPair<D: smoltcp::phy::Device> {
+
+
+
+pub struct  NetifPair<D: AsyncDevice> {
     pub iface: Box<Interface>,
     pub device: Box<D>
 }
 
-pub fn setup_if<D: phy::Device>( ip_address: IpCidr, mut device: Box<D> ) -> NetifPair<D> {
+pub fn setup_if<D: AsyncDevice>( ip_address: IpCidr, mut device: Box<D> ) -> NetifPair<D> {
     let mut config = Config::default();
     config.random_seed = random();
     config.hardware_addr = None;
@@ -69,8 +127,6 @@ pub fn setup_if<D: phy::Device>( ip_address: IpCidr, mut device: Box<D> ) -> Net
         let _ = addrs.push(ip_address).map_err( |_| {println!("could not add ip addr: {}", ip_address)});
     });
     netif.set_any_ip(false);
-
-    
 
     return NetifPair{
         iface: Box::new(netif),

@@ -2,11 +2,11 @@
 mod async_communication;
 mod communication;
 mod internal_bus;
-mod p4_advanced;
-mod p4_basic;
+// mod p4_advanced;
+// mod p4_basic;
 mod sysmodule;
 mod sysmodules;
-mod utils;
+// mod utils;
 mod net;
 
 
@@ -17,14 +17,14 @@ use async_communication::{AsyncGateway, DeadExternalBus};
 use communication::IdentityResolver;
 
 use futures::FutureExt;
-use p4_advanced::P4Advanced;
-use p4_basic::P4Basic;
+// use p4_advanced::P4Advanced;
+// use p4_basic::P4Basic;
 
 
 
 use tokio::task::JoinHandle;
 
-use crate::{async_communication::SysmoduleRPC, sysmodules::common::SysModule};
+use crate::{async_communication::SysmoduleRPC};
 fn spawn_sysmodule(mut sysmodule: Box<dyn IdentityResolver + Send>) -> JoinHandle<()> {
     tokio::task::spawn(async move {
         sysmodule.discover_identity().await;
@@ -33,19 +33,19 @@ fn spawn_sysmodule(mut sysmodule: Box<dyn IdentityResolver + Send>) -> JoinHandl
 #[tokio::main]
 async fn main() {
 
-    let (basic, adv) = AsyncGateway::new();
-    let basic = P4Basic::new(Box::new(basic));
+    // let (basic, adv) = AsyncGateway::new();
+    // let basic = P4Basic::new(Box::new(basic));
 
-    let dead = DeadExternalBus {};
-    let advanced = P4Advanced::new(Some(Box::new(dead)), Some(Box::new(adv)));
-    let _hmi_send = advanced.hmi.1.clone();
+    // let dead = DeadExternalBus {};
+    // let advanced = P4Advanced::new(Some(Box::new(dead)), Some(Box::new(adv)));
+    // let _hmi_send = advanced.hmi.1.clone();
 
-    let end_adv = tokio::spawn(async move {
-        advanced.start().await;
-    });
-    let end = tokio::spawn(async move {
-        basic.start().await;
-    });
+    // let end_adv = tokio::spawn(async move {
+    //     advanced.start().await;
+    // });
+    // let end = tokio::spawn(async move {
+    //     basic.start().await;
+    // });
 
     // let mut f = async move |sys: &mut dyn SysModule| {sys.send((Ipv4Addr::new(0,0,0,0), "hello".to_string()))};
     // let func: SysmoduleRPC = Box::new( move |sys: &mut dyn SysModule|
@@ -60,25 +60,26 @@ async fn main() {
     // hmi_send.send(
     // func);
 
-    end.await;
-    end_adv.await;
+    // end.await;
+    // end_adv.await;
 }
 
 mod test{
 pub use super::*;
-use crate::net::device::{STDRx,STDTx, setup_if};
+use crate::net::device::{STDRx,STDTx, setup_if, AsyncGatewayDevice};
 pub use net::udp_state::UDPState;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address, Ipv6Address};
 use smoltcp::socket::{tcp, udp};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use async_communication::{AsyncChannel};
+pub type TestDevice = AsyncGatewayDevice<AsyncGateway<Vec<u8>>>;
 
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_netif_setup(){
 
-    let (mut dev1, mut dev2 ) = AsyncGateway::<Vec<u8>>::new();
+    let (mut dev1, mut dev2 ) = AsyncGateway::<Vec<u8>>::new_async_device();
 
 
     let ip_1 = IpCidr::new(IpAddress::v4(192, 168, 69, 1), 24);
@@ -130,11 +131,11 @@ async fn test_async_netif(){
     let ip_1 = IpCidr::new(IpAddress::v4(192, 168, 69, 1), 24);
 
 
-    let mut stack1 = setup_if(ip_1, Box::new(dev1));
+    let mut stack1 = setup_if(ip_1, Box::new(AsyncGatewayDevice::new(dev1)));
     
     let ip_2 = IpCidr::new(IpAddress::v4(192, 168, 69, 2), 24);
 
-    let stack2 = setup_if(ip_2, Box::new(dev2));
+    let stack2 = setup_if(ip_2, Box::new(AsyncGatewayDevice::new(dev2)));
 
 
     let mut udp_1 = Arc::new(Mutex::new(UDPState::new(vec![stack1]) ) );
@@ -160,11 +161,11 @@ async fn test_concurrent_wait(){
     let ip_1 = IpCidr::new(IpAddress::v4(192, 168, 69, 1), 24);
 
 
-    let mut stack1 = setup_if(ip_1, Box::new(dev1));
+    let mut stack1 = setup_if(ip_1, Box::new(AsyncGatewayDevice::new(dev1)));
     
     let ip_2 = IpCidr::new(IpAddress::v4(192, 168, 69, 2), 24);
 
-    let stack2 = setup_if(ip_2, Box::new(dev2));
+    let stack2 = setup_if(ip_2, Box::new(AsyncGatewayDevice::new(dev2)));
 
 
     let mut udp_1 = Arc::new(Mutex::new(UDPState::new(vec![stack1]) ) );
@@ -201,8 +202,8 @@ async fn test_second_netif_ingress(){
     let ip_2 = IpCidr::new(IpAddress::v4(192, 169, 0, 1), 24);
 
 
-    let stack1 = setup_if(ip_1, Box::new(dev1));
-    let stack2 = setup_if(ip_2, Box::new(dev2));
+    let stack1 = setup_if(ip_1, Box::new( AsyncGatewayDevice::new(dev1)));
+    let stack2 = setup_if(ip_2, Box::new(AsyncGatewayDevice::new(dev2)));
 
     let mut udp_1 = Arc::new(Mutex::new(UDPState::new(vec![stack1, stack2]) ) );
 
@@ -222,12 +223,11 @@ async fn test_second_netif_ingress(){
         
 }
 use simple_logger::SimpleLogger;
-use log::LevelFilter;
+use log::{LevelFilter, trace};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_broadcast_ability(){
-    simple_logger::init_with_level(log::Level::Trace);
-    let ( dev1,   dev2) = AsyncGateway::<Vec<u8>>::new();
+    let ( dev1,   dev2) = AsyncGateway::<Vec<u8>>::new_async_device();
 
     let ip_1 = IpCidr::new(IpAddress::v4(192, 168, 69, 1), 24);
 
@@ -256,8 +256,8 @@ async fn test_broadcast_ability(){
 #[tokio::test(flavor = "multi_thread")]
 async fn test_two_netif_response(){
 
-    let (mut dev1, mut test_netif_1 ) = AsyncGateway::<Vec<u8>>::new();
-    let (mut dev2, mut test_netif_2 ) = AsyncGateway::<Vec<u8>>::new();
+    let (mut dev1, mut test_netif_1 ) = AsyncGateway::<Vec<u8>>::new_async_device();
+    let (mut dev2, mut test_netif_2 ) = AsyncGateway::<Vec<u8>>::new_async_device();
 
     let ip_1 = IpCidr::new(IpAddress::v4(192, 168, 69, 1), 24);
 
@@ -287,34 +287,97 @@ async fn test_two_netif_response(){
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn test_advanced_basic() {
-    let (basic, adv) = AsyncGateway::new();
-    let mut basic = P4Basic::new(Box::new(basic));
+async fn test_internal_bus_communication(){
 
-    let dead = DeadExternalBus {};
-    let advanced = P4Advanced::new(Some(Box::new(dead)), Some(Box::new(adv)));
-    let com_send = basic.com.1.clone();
+    let (mut dev1, ib_side1 ) = AsyncGateway::<Vec<u8>>::new_async_device();
+    let (mut dev2, ib_side2 ) = AsyncGateway::<Vec<u8>>::new_async_device();
+    let (mut dev3, ib_side3 ) = AsyncGateway::<Vec<u8>>::new_async_device();
 
-    let end_adv = tokio::spawn(async move {
-        advanced.start().await;
-    });
-    let end = tokio::spawn(async move {
-        basic.start().await;
-    });
-    let mut f = async move |sys: &mut dyn SysModule| {sys.send("hello".as_bytes().to_vec())};
-    let func: SysmoduleRPC = Box::new( move |sys: &mut dyn SysModule|
-    {
-        return async
-        {
-            sys.send( "hello from com".as_bytes().to_vec());
+    let mut ib = internal_bus::InternalBus::new();
+    ib.subscribe(ib_side1.gateway);
+    ib.subscribe(ib_side2.gateway);
+    ib.subscribe(ib_side3.gateway);
 
-        }.boxed()
+
+    let addr_1 = IpAddress::v4(192, 168, 69, 1);
+    let addr_2 = IpAddress::v4(192, 168, 69, 2);
+    let addr_3 = IpAddress::v4(192, 168, 69, 3);
+
+
+    let ip_1 = IpCidr::new(addr_1.clone(), 24);
+    let ip_2 = IpCidr::new(addr_2.clone(), 24);
+    let ip_3 = IpCidr::new(addr_3.clone(), 24);
+
+    let stack1 = setup_if(ip_1, Box::new(dev1));
+    let stack2 = setup_if(ip_2, Box::new(dev2));
+    let stack3 = setup_if(ip_3, Box::new(dev3));
+
+
+    let mut udp_1: Arc<Mutex<UDPState<TestDevice>>> = Arc::new(Mutex::new(UDPState::new(vec![stack1]) ) );
+    let mut udp_2: Arc<Mutex<UDPState<TestDevice>>> = Arc::new(Mutex::new(UDPState::new(vec![stack2]) ) );
+    let mut udp_3: Arc<Mutex<UDPState<TestDevice>>> = Arc::new(Mutex::new(UDPState::new(vec![stack3]) ) );
+
+    let a = tokio::spawn(async move {
+        loop{ib.run_once().await}
     });
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    com_send.send(
-    func);
-    // end_adv.await;
-    // end.await;
+
+    let  task_2  =tokio::spawn(async move {
+        let mut socket2 = AsyncUDPSocket::new( 6969, udp_2.clone()).await;
+        let a = socket2.receive_with_timeout(std::time::Duration::from_millis(500)).await.expect("did not receive in time");
+        let a =socket2.receive_with_timeout(std::time::Duration::from_millis(500)).await.expect("did not receive in time");
+    });
+
+    let task_1 = tokio::spawn(async move {
+        let hello = "hello_world!";
+        let mut socket1 = AsyncUDPSocket::new(6969, udp_1.clone()).await;
+        socket1.send(Vec::from(hello.as_bytes()), smoltcp::wire::IpEndpoint { addr: addr_2, port: 6969 }).await;
+        task_2.await.expect("panic occured in read task!");
+
+    });
+
+    let task_3 = tokio::spawn(async move {
+        let hello = "hello_world!";
+        let mut socket1 = AsyncUDPSocket::new(6969, udp_3.clone()).await;
+        socket1.send(Vec::from(hello.as_bytes()), smoltcp::wire::IpEndpoint { addr: addr_2, port: 6969 }).await;
+        task_1.await.expect("panic occured in first send task!");
+    });
+
+
+    
+    task_3.await;
+    let _ = a.await; // cleanup: OK to panic
+        
 }
+
+// #[tokio::test(flavor = "multi_thread")]
+// async fn test_advanced_basic() {
+//     let (basic, adv) = AsyncGateway::new();
+//     let mut basic = P4Basic::new(Box::new(basic));
+
+//     let dead = DeadExternalBus {};
+//     let advanced = P4Advanced::new(Some(Box::new(dead)), Some(Box::new(adv)));
+//     let com_send = basic.com.1.clone();
+
+//     let end_adv = tokio::spawn(async move {
+//         advanced.start().await;
+//     });
+//     let end = tokio::spawn(async move {
+//         basic.start().await;
+//     });
+//     let mut f = async move |sys: &mut dyn SysModule| {sys.send("hello".as_bytes().to_vec())};
+//     let func: SysmoduleRPC = Box::new( move |sys: &mut dyn SysModule|
+//     {
+//         return async
+//         {
+//             sys.send( "hello from com".as_bytes().to_vec());
+
+//         }.boxed()
+//     });
+//     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+//     com_send.send(
+//     func);
+//     // end_adv.await;
+//     // end.await;
+// }
 
 }

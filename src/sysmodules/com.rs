@@ -1,7 +1,7 @@
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
-use super::common::{BasicModule, SysModule, SysModuleStartup};
+use super::common::{BasicModule, SysModuleStartup};
 use crate::async_communication::{AsyncChannel};
 use crate::sysmodule::{
     BasicTransmitter, HubIndex,
@@ -36,21 +36,18 @@ pub enum ComType {
 //     }
 // }
 
-pub struct Com {
+pub struct Com{
     base: BasicModule,
-    external_bus: Box<dyn AsyncChannel<Vec<u8>>>,
     initial_configuration: ComType,
     is_external_dead: bool,
 }
 const WAIT_DEFAULT: Duration = Duration::from_millis(5);
 impl Com {
     pub fn new(
-        external_bus: Box<dyn AsyncChannel<Vec<u8>>>,
         base: BasicModule,
         initial_configuration: ComType,
     ) -> Self {
         Self {
-            external_bus,
             base,
             initial_configuration,
             is_external_dead: false,
@@ -58,105 +55,91 @@ impl Com {
     }
 
     async fn configure_hub(&mut self, i: HubIndex) {
-        self.external_bus.send(ModuleNeighborInfo::Hub(i).into());
-        let neighbor_id: ModuleNeighborInfo = self
-            .external_bus
-            .receive()
-            .await
-            .try_into()
-            .expect("could not figure out identity");
-        println!("neighbor from hub: {:?}: {:?}", i, neighbor_id);
+        todo!();
+        // self.external_bus.send(ModuleNeighborInfo::Hub(i).into());
+        // let neighbor_id: ModuleNeighborInfo = self
+        //     .external_bus
+        //     .receive()
+        //     .await
+        //     .try_into()
+        //     .expect("could not figure out identity");
+        // println!("neighbor from hub: {:?}: {:?}", i, neighbor_id);
     }
 
     async fn configure_upstream(&mut self) {
-        let parent = self.external_bus.receive_with_timeout(WAIT_DEFAULT).await;
-        let parent = parent
-            .map(|addr | {
-                addr.try_into()
-                    .expect("did not receive module neighbor info!")
-            })
-            .unwrap_or(ModuleNeighborInfo::NoNeighbor);
+        todo!();
+        // let parent = self.external_bus.receive_with_timeout(WAIT_DEFAULT).await;
+        // let parent = parent
+        //     .map(|addr | {
+        //         addr.try_into()
+        //             .expect("did not receive module neighbor info!")
+        //     })
+        //     .unwrap_or(ModuleNeighborInfo::NoNeighbor);
 
-        let child = self.base.internal_bus.receive_with_timeout(WAIT_DEFAULT).await;
+        // let child = self.base.internal_bus.receive_with_timeout(WAIT_DEFAULT).await;
 
-        let child = child
-            .map(|addr| {
-                addr.try_into()
-                    .expect("did not receive module neighbor info!")
-            })
-            .unwrap_or(ModuleNeighborInfo::NoNeighbor);
+        // let child = child
+        //     .map(|addr| {
+        //         addr.try_into()
+        //             .expect("did not receive module neighbor info!")
+        //     })
+        //     .unwrap_or(ModuleNeighborInfo::NoNeighbor);
 
-        let state = match (parent, child) {
-            (NoNeighbor, NoNeighbor) => ModuleNeighborInfo::Advanced(None, None),
-            (Hub(i), NoNeighbor) => Advanced(Some(i), None),
-            (NoNeighbor, Basic) => Advanced(None, Some(BasicTransmitter())),
-            (Hub(i), Basic) => Advanced(Some(i), Some(BasicTransmitter())),
-            (_, _) => panic!("unknown configuration!"),
-        };
+        // let state = match (parent, child) {
+        //     (NoNeighbor, NoNeighbor) => ModuleNeighborInfo::Advanced(None, None),
+        //     (Hub(i), NoNeighbor) => Advanced(Some(i), None),
+        //     (NoNeighbor, Basic) => Advanced(None, Some(BasicTransmitter())),
+        //     (Hub(i), Basic) => Advanced(Some(i), Some(BasicTransmitter())),
+        //     (_, _) => panic!("unknown configuration!"),
+        // };
 
-        println!("state of advanced: {:?}", &state);
-        self.base.internal_bus.send(state.clone().into());
-        self.external_bus.send(state.clone().into());
+        // println!("state of advanced: {:?}", &state);
+        // self.base.internal_bus.send(state.clone().into());
+        // self.external_bus.send(state.clone().into());
     }
 
     async fn configure_downstream(&mut self) {
-        let child = self.external_bus.receive_with_timeout(WAIT_DEFAULT).await;
-        match child {
-            None => self
-                .base
-                .internal_bus
-                .send(ModuleNeighborInfo::NoNeighbor.into()),
-            Some(_) => self
-                .base
-                .internal_bus
-                .send(ModuleNeighborInfo::Basic.into()),
-        };
-        let state = self.base.internal_bus.receive().await;
-        println!("sending state downstream ...");
-        self.external_bus.send(state);
+        todo!();
+        // let child = self.external_bus.receive_with_timeout(WAIT_DEFAULT).await;
+        // match child {
+        //     None => self
+        //         .base
+        //         .internal_bus
+        //         .send(ModuleNeighborInfo::NoNeighbor.into()),
+        //     Some(_) => self
+        //         .base
+        //         .internal_bus
+        //         .send(ModuleNeighborInfo::Basic.into()),
+        // };
+        // let state = self.base.internal_bus.receive().await;
+        // println!("sending state downstream ...");
+        // self.external_bus.send(state);
     }
 
     async fn configure_basic(&mut self) {
-        self.external_bus.send(ModuleNeighborInfo::Basic.into());
-        println!("sending p4 identity");
-        let parent = self.external_bus.receive_with_timeout(WAIT_DEFAULT).await;
-        let parent = parent
-            .map(|addr| {
-                addr.try_into()
-                    .expect("did not receive module neighbor info!")
-            })
-            .unwrap_or(ModuleNeighborInfo::NoNeighbor);
-        println!("state from pov of basic: {:?}", &parent);
+        todo!();
+        // self.external_bus.send(ModuleNeighborInfo::Basic.into());
+        // println!("sending p4 identity");
+        // let parent = self.external_bus.receive_with_timeout(WAIT_DEFAULT).await;
+        // let parent = parent
+        //     .map(|addr| {
+        //         addr.try_into()
+        //             .expect("did not receive module neighbor info!")
+        //     })
+        //     .unwrap_or(ModuleNeighborInfo::NoNeighbor);
+        // println!("state from pov of basic: {:?}", &parent);
     }
 }
 
-#[async_trait::async_trait]
-impl SysModule for Com {
-    async fn receive(&mut self) -> Vec<u8> {
-        if !self.is_external_dead {
-            return select! {
-               ib_msg =  self.base.receive() => ib_msg,
-               ext_msg =  self.external_bus.receive() => ext_msg
-            };
-        } else {
-            return self.base.receive().await;
-        }
-    }
-
-    fn send(&mut self, _msg: Vec<u8>) {
-        //
-        todo!("decide routing for sysmodule")
-        // no-op
-    }
-}
 
 #[async_trait::async_trait]
 impl SysModuleStartup for Com {
     async fn run_once(&mut self) {
-        loop {
-            let msg = self.base.internal_bus.receive().await;
-            println!("COM module: recv {:?}", msg);
-        }
+        todo!();
+        // loop {
+        //     let msg = self.base.internal_bus.receive().await;
+        //     println!("COM module: recv {:?}", msg);
+        // }
     }
     async fn on_start(&mut self) {
         match self.initial_configuration {

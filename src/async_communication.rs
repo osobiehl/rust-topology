@@ -9,11 +9,12 @@ use std::time::Duration;
 
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
+use crate::net::device::AsyncGatewayDevice;
+use crate::sysmodules::common::BasicModule;
 
-use crate::sysmodules::common::SysModule;
 
 
-pub type SysmoduleRPC = Box<dyn FnOnce(&mut dyn SysModule) -> BoxFuture<()> + Send>;
+pub type SysmoduleRPC = Box<dyn FnOnce(&mut BasicModule) -> BoxFuture<()> + Send>;
 
 
 
@@ -37,6 +38,15 @@ impl<T> AsyncGateway<T> {
             },
         );
     }
+
+
+}
+
+impl AsyncGateway<Vec<u8>>{
+    pub fn new_async_device() -> (AsyncGatewayDevice<Self>, AsyncGatewayDevice<Self>){
+        let (g_a, g_b ) = Self::new();
+        return (AsyncGatewayDevice::new(g_a), AsyncGatewayDevice::new(g_b))
+    }
 }
 
 #[async_trait::async_trait]
@@ -47,6 +57,8 @@ pub trait AsyncChannel<T>: Send {
     async fn receive_with_timeout(&mut self, timeout: Duration) -> Option<T>;
 
     fn try_receive(&mut self) -> Option<T>;
+
+    fn sender(&self) -> UnboundedSender<T>;
 }
 #[async_trait::async_trait]
 impl<T: std::marker::Send + Debug> AsyncChannel<T> for AsyncGateway<T> {
@@ -66,6 +78,9 @@ impl<T: std::marker::Send + Debug> AsyncChannel<T> for AsyncGateway<T> {
     fn try_receive(&mut self) -> Option<T>{
         self.rx.try_recv().ok()
     }
+    fn sender(&self) -> UnboundedSender<T>{
+        self.tx.clone()
+    }
 }
 
 pub struct DeadExternalBus {}
@@ -83,5 +98,8 @@ impl<T: std::marker::Send + Debug> AsyncChannel<T> for DeadExternalBus {
     }
     fn try_receive(&mut self) -> Option<T>{
         return None;
+    }
+    fn sender(&self) -> tokio::sync::mpsc::UnboundedSender<T> {
+        todo!();
     }
 }

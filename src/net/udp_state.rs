@@ -1,3 +1,4 @@
+use crate::async_communication::AsyncChannel;
 use crate::net::device::{STDRx,STDTx, setup_if};
 use futures::FutureExt;
 use ipnet::IpAdd;
@@ -9,23 +10,24 @@ use smoltcp::iface::{Config, Interface, SocketSet, SocketHandle};
 use smoltcp::time::Instant;
 use std::sync::Arc;
 use std::task::{Poll, Context};
+use std::time::Duration;
 use tokio::sync::Mutex;
 use std::pin::Pin;
 use std::future::Future;
 use async_trait::async_trait;
 #[async_trait]
-pub trait NetStack<D: smoltcp::phy::Device>{
-    async fn socket<T:Into<IpListenEndpoint>> (&self) -> AsyncUDPSocket<'_, D>;
-    async fn netif<'a>(&'a self) -> &'a mut UDPState<'a, D>;
+pub trait NetStack<D: AsyncDevice>{
+    async fn socket<T:Into<IpListenEndpoint> + Send> (&self, endpoint: T) -> AsyncUDPSocket<D>;
+    async fn modify_netif< F>(&self, f: F) where F: FnOnce( & mut UDPState<D>) + Send;
 }
 
-pub struct AsyncUDPSocket<'a, D: smoltcp::phy::Device> {
+pub struct AsyncUDPSocket< D: AsyncDevice> {
     handle: SocketHandle,
-    state: Arc<Mutex<UDPState<'a, D> >>
+    state: Arc<Mutex<UDPState< D> >>
 }
 pub type UdpResponse = (Vec<u8>, smoltcp::wire::IpEndpoint);
-impl <'a, D: smoltcp::phy::Device> AsyncUDPSocket<'a, D> {
-    pub async fn new<T: Into<IpListenEndpoint>>( src_port: T, state: Arc<Mutex<UDPState<'a, D> >> ) -> AsyncUDPSocket<'a, D>{
+impl <D: AsyncDevice + AsyncChannel<Vec<u8> >> AsyncUDPSocket< D> {
+    pub async fn new<T: Into<IpListenEndpoint>>( src_port: T, state: Arc<Mutex<UDPState< D> >> ) -> AsyncUDPSocket< D>{
         let state_2 = state.clone();
         let mut s = state.lock().await;
         return Self{
@@ -34,11 +36,18 @@ impl <'a, D: smoltcp::phy::Device> AsyncUDPSocket<'a, D> {
         };
     }
 
-    pub fn recv<'b> (&'b mut self) -> UDPSocketRead<'a, 'b , D > {
+    pub fn recv<'b> (&'b mut self) -> UDPSocketRead<'b , D > {
         return  UDPSocketRead(self);
     }
 
-
+    pub async fn receive_with_timeout(&mut self, timeout: Duration) -> UdpResult{
+        let ans: Result<(Vec<u8>, IpEndpoint), ()> = futures::select! {
+            x = self.recv().fuse() => x,
+            _ = tokio::time::sleep(timeout).fuse() => Err(())
+        };
+        return ans;
+    }
+    
     pub async fn send( &mut self, mut payload: Vec<u8>, endpoint: IpEndpoint){
         let mut state =  self.state.lock().await;
         let s = state.sockets.get_mut::<udp::Socket>(self.handle);
@@ -49,13 +58,14 @@ impl <'a, D: smoltcp::phy::Device> AsyncUDPSocket<'a, D> {
 
 }
 
-pub struct UDPSocketRead<'a, 'b , D: smoltcp::phy::Device>(
-   pub(crate) &'b mut AsyncUDPSocket<'a, D>);
+pub struct UDPSocketRead<'b , D: AsyncDevice>(
+   pub(crate) &'b mut AsyncUDPSocket< D>);
 
 
 use futures::pin_mut;
+use crate::net::device::{AsyncDevice, AsyncGatewayDevice};
 pub type UdpResult = Result<UdpResponse, ()>;
-impl<'a, 'b , D: smoltcp::phy::Device> std::future::Future for UDPSocketRead<'a,'b, D>{
+impl< 'b , D: AsyncDevice > std::future::Future for UDPSocketRead<'b, D>{
     type Output = UdpResult;
     fn poll(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
         let fut = self.0.state.lock();
@@ -63,6 +73,14 @@ impl<'a, 'b , D: smoltcp::phy::Device> std::future::Future for UDPSocketRead<'a,
         let Poll::Ready(mut state) = fut.poll(cx) else {
             return Poll::Pending;
         };
+        for mut netif in &mut state.netifs{
+            let mut r = AsyncChannel::receive(netif.device.as_mut());
+            let y = r.poll_unpin(cx);
+            drop(r);
+            if let Poll::Ready(x) = y{
+                netif.device.inject_frame(x);
+            }
+        }
         state.poll();
         let socket = state.sockets.get_mut::<udp::Socket>(self.0.handle.clone());
         if !socket.is_open(){
@@ -76,20 +94,21 @@ impl<'a, 'b , D: smoltcp::phy::Device> std::future::Future for UDPSocketRead<'a,
             socket.register_recv_waker(cx.waker());
         }
         return Poll::Pending;
+
         
     }
 }
 
 use crate::net::device::NetifPair;
 
-pub struct UDPState<'a, D: smoltcp::phy::Device>{
-    pub sockets: SocketSet<'a>,
+pub struct UDPState< D: AsyncDevice>{
+    pub sockets: SocketSet<'static>,
     pub handles: Vec<SocketHandle>,
     pub netifs: Vec<NetifPair<D>>,
 
 }
 
-impl<'a, D: smoltcp::phy::Device> UDPState<'a, D>{
+impl<'a, D: AsyncDevice> UDPState< D>{
     pub fn new(netifs: Vec<NetifPair<D>>)->Self{
         Self { sockets: SocketSet::new(vec![]), handles: vec![], netifs}
     }

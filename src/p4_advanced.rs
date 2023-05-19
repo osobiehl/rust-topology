@@ -9,50 +9,51 @@ use internal_bus::InternalBus;
 use std::net::Ipv4Addr;
 
 // basic p4
-pub struct P4Advanced {
-    pub pv: Option<(PV, TestingSender)>,
-    pub hub_to_adv: Option<(Com, TestingSender)>,
-    pub adv_to_basic: Option<(Com, TestingSender)>,
-    pub hmi: (HMI, TestingSender),
+pub struct P4Advanced<'a, 'b> {
+    pub pv: Option<(PV<'a>, TestingSender)>,
+    pub hub_to_adv: Option<(Com<'a>, TestingSender)>,
+    pub adv_to_basic: Option<(Com<'a>, TestingSender)>,
+    pub hmi: (HMI<'a>, TestingSender),
     pub bus: InternalBus,
 }
 
-impl P4Advanced {
+impl<'a> P4Advanced<'a> {
     pub fn new(
         hub: Option<Box<dyn AsyncChannel<Vec<u8>>>>,
         basic: Option<Box<dyn AsyncChannel<Vec<u8>>>>,
     ) -> Self {
-        let mut bus = InternalBus::new();
-        let mut pv = None;
-        let mut hub2adv = None;
-        let mut basic2adv = None;
-        if let Some(channel) = hub {
-            let (com_basic, com_ib, com_test) = new_basic(Ipv4Addr::UNSPECIFIED);
-            let com = Com::new(channel, com_basic, ComType::AdvUpstream);
-            bus.subscribe(com_ib);
-            hub2adv = Some((com, com_test));
-        }
-        if let Some(channel) = basic {
-            let (com_basic, com_ib, com_test) = new_basic(Ipv4Addr::UNSPECIFIED);
-            let com = Com::new(channel, com_basic, ComType::AdvDownstream);
-            bus.subscribe(com_ib);
-            basic2adv = Some((com, com_test));
-        } else {
-            let (pv_mod, ib_pv, pv_test_tx) = new_basic(Ipv4Addr::UNSPECIFIED);
-            bus.subscribe(ib_pv);
-            pv = Some((PV(pv_mod), pv_test_tx));
-        }
-        let (hmi, ib_hmi, hmi_test_tx) = new_basic(Ipv4Addr::UNSPECIFIED);
+        todo!();
+        // let mut bus = InternalBus::new();
+        // let mut pv = None;
+        // let mut hub2adv = None;
+        // let mut basic2adv = None;
+        // if let Some(channel) = hub {
+        //     let (com_basic, com_ib, com_test) = new_basic(Ipv4Addr::UNSPECIFIED);
+        //     let com = Com::new(channel, com_basic, ComType::AdvUpstream);
+        //     bus.subscribe(com_ib);
+        //     hub2adv = Some((com, com_test));
+        // }
+        // if let Some(channel) = basic {
+        //     let (com_basic, com_ib, com_test) = new_basic(Ipv4Addr::UNSPECIFIED);
+        //     let com = Com::new(channel, com_basic, ComType::AdvDownstream);
+        //     bus.subscribe(com_ib);
+        //     basic2adv = Some((com, com_test));
+        // } else {
+        //     let (pv_mod, ib_pv, pv_test_tx) = new_basic(Ipv4Addr::UNSPECIFIED);
+        //     bus.subscribe(ib_pv);
+        //     pv = Some((PV(pv_mod), pv_test_tx));
+        // }
+        // let (hmi, ib_hmi, hmi_test_tx) = new_basic(Ipv4Addr::UNSPECIFIED);
 
-        bus.subscribe(ib_hmi);
+        // bus.subscribe(ib_hmi);
 
-        return Self {
-            pv,
-            hub_to_adv: hub2adv,
-            adv_to_basic: basic2adv,
-            hmi: (HMI(hmi), hmi_test_tx),
-            bus,
-        };
+        // return Self {
+        //     pv,
+        //     hub_to_adv: hub2adv,
+        //     adv_to_basic: basic2adv,
+        //     hmi: (HMI(hmi), hmi_test_tx),
+        //     bus,
+        // };
     }
 
     ///
