@@ -6,6 +6,7 @@ use super::common::{BasicModule, SysModuleStartup};
 use crate::sysmodule::{
     HubIndex,
 };
+use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address, Ipv6Address};
 
 
 #[derive(Clone, Copy, Debug)]
@@ -14,6 +15,12 @@ pub enum ComType {
     AdvUpstream,
     AdvDownstream,
     Basic,
+}
+
+impl ComType{
+    pub fn external_bus_ip(&self)->IpCidr{
+        return IpCidr::new(IpAddress::v4(192, 168, 70, 1), 24);
+    }
 }
 
 // impl Into<u8> for ComType{

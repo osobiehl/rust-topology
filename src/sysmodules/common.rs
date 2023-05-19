@@ -13,6 +13,12 @@ use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::mpsc::UnboundedSender;
 use crate::net::udp_state::{AsyncUDPSocket, NetStack, UDPState};
+use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address, Ipv6Address};
+
+pub const TRANSIENT_HMI_ID: IpAddress = IpAddress::v4(192, 168, 69, 1);
+pub const TRANSIENT_PV_ID: IpAddress = IpAddress::v4(192, 168, 69, 2);
+pub const TRANSIENT_PI_ID: IpAddress = IpAddress::v4(192, 168, 69, 3);
+pub const TRANSIENT_GATEWAY_ID: IpAddress = IpAddress::v4(192, 168, 69, 4);
 
 
 
@@ -49,8 +55,8 @@ impl BasicModule {
 }
 
 pub struct PI {
-    base: BasicModule,
-    hart_interface: AsyncGateway<Vec<u8>>,
+    pub base: BasicModule,
+    // hart_interface: AsyncGateway<Vec<u8>>, TODO Change
 }
 
 pub struct PV(pub BasicModule);

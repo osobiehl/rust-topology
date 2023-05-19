@@ -3,11 +3,14 @@ mod async_communication;
 mod communication;
 mod internal_bus;
 // mod p4_advanced;
-// mod p4_basic;
+mod p4_basic;
 mod sysmodule;
 mod sysmodules;
-// mod utils;
+mod utils;
 mod net;
+
+use crate::net::device::{setup_if, AsyncGatewayDevice};
+pub type TestDevice = AsyncGatewayDevice<AsyncGateway<Vec<u8>>>;
 
 
 
@@ -66,14 +69,13 @@ async fn main() {
 
 mod test{
 pub use super::*;
-use crate::net::device::{STDRx,STDTx, setup_if, AsyncGatewayDevice};
+
 pub use net::udp_state::UDPState;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address, Ipv6Address};
 use smoltcp::socket::{tcp, udp};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use async_communication::{AsyncChannel};
-pub type TestDevice = AsyncGatewayDevice<AsyncGateway<Vec<u8>>>;
 
 
 #[tokio::test(flavor = "multi_thread")]
@@ -98,7 +100,8 @@ async fn test_netif_setup(){
     let handle_send = udp_1.new_socket(6969);
     let handle_receive = udp_2.new_socket(6969);
     let hello = "hello_world!";
-    {    let _ = udp_1.poll();
+    {   
+        let _ = udp_1.poll();
         let _ = udp_2.poll();
 
         let send_sock = udp_1.sockets.get_mut::<udp::Socket>(handle_send);
@@ -223,7 +226,8 @@ async fn test_second_netif_ingress(){
         
 }
 use simple_logger::SimpleLogger;
-use log::{LevelFilter, trace};
+use log::{LevelFilter, trace, logger};
+//     simple_logger::init_with_level(log::Level::Trace);
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_broadcast_ability(){
@@ -247,6 +251,7 @@ async fn test_broadcast_ability(){
     socket1.send(Vec::from(hello.as_bytes()), smoltcp::wire::IpEndpoint { addr: IpAddress::v4(255, 255, 255, 255), port: 6968 }).await;
 
     let r = socket2.recv().await.expect("received nothing!");
+
 
 
         
@@ -289,9 +294,9 @@ async fn test_two_netif_response(){
 #[tokio::test(flavor = "multi_thread")]
 async fn test_internal_bus_communication(){
 
-    let (mut dev1, ib_side1 ) = AsyncGateway::<Vec<u8>>::new_async_device();
-    let (mut dev2, ib_side2 ) = AsyncGateway::<Vec<u8>>::new_async_device();
-    let (mut dev3, ib_side3 ) = AsyncGateway::<Vec<u8>>::new_async_device();
+    let ( dev1, ib_side1 ) = AsyncGateway::<Vec<u8>>::new_async_device();
+    let ( dev2, ib_side2 ) = AsyncGateway::<Vec<u8>>::new_async_device();
+    let ( dev3, ib_side3 ) = AsyncGateway::<Vec<u8>>::new_async_device();
 
     let mut ib = internal_bus::InternalBus::new();
     ib.subscribe(ib_side1.gateway);
@@ -302,7 +307,6 @@ async fn test_internal_bus_communication(){
     let addr_1 = IpAddress::v4(192, 168, 69, 1);
     let addr_2 = IpAddress::v4(192, 168, 69, 2);
     let addr_3 = IpAddress::v4(192, 168, 69, 3);
-
 
     let ip_1 = IpCidr::new(addr_1.clone(), 24);
     let ip_2 = IpCidr::new(addr_2.clone(), 24);

@@ -47,7 +47,7 @@ impl Into<Vec<u8>> for ModuleNeighborInfo {
         return serde_json::to_vec(&self).unwrap();
     }
 }
-const DISCOVERY_ADDRESS: Ipv4Addr = Ipv4Addr::new(255, 255, 255, 255);
+
 fn parse_discovery_message(m: Vec<u8>) -> Result<ModuleNeighborInfo, ()> {
     return serde_json::from_slice(&m).map_err(|_| () )
 }
