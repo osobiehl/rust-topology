@@ -33,10 +33,8 @@ pub enum ModuleNeighborInfo {
     Hub(HubIndex),                                        // hub
     Advanced(Option<HubIndex>, Option<BasicTransmitter>), // advanced: can be root, middle component, or leaf
 }
-use crate::{
-    async_communication::{IPMessage},
-};
-impl TryInto<ModuleNeighborInfo> for IPMessage {
+
+impl TryInto<ModuleNeighborInfo> for Vec<u8> {
     type Error = ();
     fn try_into(self) -> Result<ModuleNeighborInfo, Self::Error> {
         // println!("message: {:?}", &self);
@@ -44,21 +42,14 @@ impl TryInto<ModuleNeighborInfo> for IPMessage {
     }
 }
 
-impl Into<IPMessage> for ModuleNeighborInfo {
-    fn into(self) -> IPMessage {
-        return (
-            Ipv4Addr::new(255, 255, 255, 255),
-            serde_json::to_string(&self).unwrap(),
-        );
+impl Into<Vec<u8>> for ModuleNeighborInfo {
+    fn into(self) -> Vec<u8> {
+        return serde_json::to_vec(&self).unwrap();
     }
 }
 const DISCOVERY_ADDRESS: Ipv4Addr = Ipv4Addr::new(255, 255, 255, 255);
-fn parse_discovery_message(m: IPMessage) -> Result<ModuleNeighborInfo, ()> {
-    if m.0.cmp(&DISCOVERY_ADDRESS) == std::cmp::Ordering::Equal {
-        let msg = serde_json::from_str::<ModuleNeighborInfo>(&m.1);
-        return msg.map_err(|_| ());
-    }
-    return Err(());
+fn parse_discovery_message(m: Vec<u8>) -> Result<ModuleNeighborInfo, ()> {
+    return serde_json::from_slice(&m).map_err(|_| () )
 }
 
 // pub mod transmitters {

@@ -1,4 +1,3 @@
-use crate::async_communication::{IPMessage};
 
 use crate::{
     async_communication::AsyncChannel,
@@ -20,8 +19,8 @@ pub struct P4Advanced {
 
 impl P4Advanced {
     pub fn new(
-        hub: Option<Box<dyn AsyncChannel<IPMessage>>>,
-        basic: Option<Box<dyn AsyncChannel<IPMessage>>>,
+        hub: Option<Box<dyn AsyncChannel<Vec<u8>>>>,
+        basic: Option<Box<dyn AsyncChannel<Vec<u8>>>>,
     ) -> Self {
         let mut bus = InternalBus::new();
         let mut pv = None;

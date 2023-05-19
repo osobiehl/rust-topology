@@ -1,4 +1,4 @@
-use crate::net::device::{STDRx,STDTx,TokioChannel, setup_if};
+use crate::net::device::{STDRx,STDTx, setup_if};
 use futures::FutureExt;
 use smoltcp::socket::udp::PacketBuffer;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address, Ipv6Address, IpEndpoint, IpListenEndpoint};

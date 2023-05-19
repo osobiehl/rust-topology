@@ -1,4 +1,3 @@
-use crate::async_communication::{IPMessage};
 
 use crate::utils::new_basic;
 use crate::{
@@ -19,7 +18,7 @@ pub struct P4Basic {
 }
 
 impl P4Basic {
-    pub fn new(parent: Box<dyn AsyncChannel<IPMessage>>) -> Self {
+    pub fn new(parent: Box<dyn AsyncChannel<Vec<u8>>>) -> Self {
         let mut bus = InternalBus::new();
 
         let ( pv, ib_pv, pv_test_tx) = new_basic(Ipv4Addr::UNSPECIFIED);

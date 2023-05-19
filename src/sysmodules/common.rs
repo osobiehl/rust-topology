@@ -1,4 +1,4 @@
-use crate::async_communication::{AsyncGateway, IPMessage, SysmoduleRPC};
+use crate::async_communication::{AsyncGateway, SysmoduleRPC};
 use crate::{async_communication::AsyncChannel};
 use async_trait::async_trait;
 use either::Either;
@@ -14,14 +14,14 @@ use futures::future::FutureExt;
 pub type TestingReceiver = UnboundedReceiver<SysmoduleRPC>;
 pub type TestingSender = UnboundedSender<SysmoduleRPC>;
 pub struct BasicModule {
-    pub(super) internal_bus: AsyncGateway<IPMessage>,
+    pub(super) internal_bus: AsyncGateway<Vec<u8>>,
     pub(super) testing_interface: TestingReceiver,
     pub(super) address: Ipv4Addr,
 }
 
 impl BasicModule {
     pub fn new(
-        internal_bus: AsyncGateway<IPMessage>,
+        internal_bus: AsyncGateway<Vec<u8>>,
         testing_interface: TestingReceiver,
         address: Ipv4Addr,
     ) -> Self {
@@ -35,8 +35,8 @@ impl BasicModule {
 
 pub struct PI {
     base: BasicModule,
-    hart_interface: AsyncGateway<IPMessage>,
-    internal_bus: AsyncGateway<IPMessage>,
+    hart_interface: AsyncGateway<Vec<u8>>,
+    internal_bus: AsyncGateway<Vec<u8>>,
 }
 
 pub struct PV(pub BasicModule);
@@ -55,15 +55,15 @@ pub trait SysModuleStartup {
 /// NOTE: this should only be used to verify correctness of the system
 #[async_trait]
 pub trait SysModule: Send {
-    async fn receive(&mut self) -> IPMessage;
-    async fn try_receive(&mut self, timeout: Duration) -> Option<IPMessage> {
+    async fn receive(&mut self) -> Vec<u8>;
+    async fn try_receive(&mut self, timeout: Duration) -> Option<Vec<u8>> {
         let ans = select! {
             x = self.receive().fuse() => Some(x),
             _ = tokio::time::sleep(timeout).fuse() => None
         };
         return ans;
     }
-    fn send(&mut self, msg: IPMessage);
+    fn send(&mut self, msg: Vec<u8>);
 }
 
 #[async_trait]
@@ -92,10 +92,10 @@ impl SysModuleStartup for BasicModule {
 
 #[async_trait]
 impl SysModule for BasicModule {
-    async fn receive(&mut self) -> IPMessage {
+    async fn receive(&mut self) -> Vec<u8> {
         self.internal_bus.receive().await
     }
-    fn send(&mut self, msg: IPMessage) {
+    fn send(&mut self, msg: Vec<u8>) {
         self.internal_bus.send(msg);
     }
 }

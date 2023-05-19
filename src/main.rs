@@ -66,7 +66,7 @@ async fn main() {
 
 mod test{
 pub use super::*;
-use crate::net::device::{STDRx,STDTx,TokioChannel, setup_if};
+use crate::net::device::{STDRx,STDTx, setup_if};
 pub use net::udp_state::UDPState;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address, Ipv6Address};
 use smoltcp::socket::{tcp, udp};
@@ -76,11 +76,9 @@ use tokio::sync::Mutex;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_netif_setup(){
-    let (tx1, rx1) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-    let (tx2, rx2) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
 
-    let mut dev1 = TokioChannel::new(rx1, tx2.clone());
-    let mut dev2 = TokioChannel::new(rx2, tx1.clone());
+    let (mut dev1, mut dev2 ) = AsyncGateway::<Vec<u8>>::new();
+
 
     let ip_1 = IpCidr::new(IpAddress::v4(192, 168, 69, 1), 24);
     let eth1 = EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x01]);
@@ -127,11 +125,7 @@ async fn test_netif_setup(){
 use net::udp_state::{AsyncUDPSocket, UDPSocketRead};
 #[tokio::test(flavor = "multi_thread")]
 async fn test_async_netif(){
-    let (tx1, rx1) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-    let (tx2, rx2) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-
-    let mut dev1 = TokioChannel::new(rx1, tx2.clone());
-    let mut dev2 = TokioChannel::new(rx2, tx1.clone());
+    let (mut dev1, mut dev2 ) = AsyncGateway::<Vec<u8>>::new();
 
     let ip_1 = IpCidr::new(IpAddress::v4(192, 168, 69, 1), 24);
     let eth1 = EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x01]);
@@ -175,12 +169,12 @@ async fn test_advanced_basic() {
     let end = tokio::spawn(async move {
         basic.start().await;
     });
-    let mut f = async move |sys: &mut dyn SysModule| {sys.send((Ipv4Addr::new(0,0,0,0), "hello".to_string()))};
+    let mut f = async move |sys: &mut dyn SysModule| {sys.send("hello".as_bytes().to_vec())};
     let func: SysmoduleRPC = Box::new( move |sys: &mut dyn SysModule|
     {
         return async
         {
-            sys.send((Ipv4Addr::new(0,0,0,0), "hello from com".to_string()));
+            sys.send( "hello from com".as_bytes().to_vec());
 
         }.boxed()
     });

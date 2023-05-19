@@ -2,7 +2,7 @@ use std::net::Ipv4Addr;
 use std::time::Duration;
 
 use super::common::{BasicModule, SysModule, SysModuleStartup};
-use crate::async_communication::{AsyncChannel, IPMessage};
+use crate::async_communication::{AsyncChannel};
 use crate::sysmodule::{
     BasicTransmitter, HubIndex,
     ModuleNeighborInfo::{self, Advanced, Basic, Hub, NoNeighbor},
@@ -38,14 +38,14 @@ pub enum ComType {
 
 pub struct Com {
     base: BasicModule,
-    external_bus: Box<dyn AsyncChannel<IPMessage>>,
+    external_bus: Box<dyn AsyncChannel<Vec<u8>>>,
     initial_configuration: ComType,
     is_external_dead: bool,
 }
 const WAIT_DEFAULT: Duration = Duration::from_millis(5);
 impl Com {
     pub fn new(
-        external_bus: Box<dyn AsyncChannel<IPMessage>>,
+        external_bus: Box<dyn AsyncChannel<Vec<u8>>>,
         base: BasicModule,
         initial_configuration: ComType,
     ) -> Self {
@@ -69,15 +69,15 @@ impl Com {
     }
 
     async fn configure_upstream(&mut self) {
-        let parent = self.external_bus.try_receive(WAIT_DEFAULT).await;
+        let parent = self.external_bus.receive_with_timeout(WAIT_DEFAULT).await;
         let parent = parent
-            .map(|addr: (Ipv4Addr, String)| {
+            .map(|addr | {
                 addr.try_into()
                     .expect("did not receive module neighbor info!")
             })
             .unwrap_or(ModuleNeighborInfo::NoNeighbor);
 
-        let child = self.base.internal_bus.try_receive(WAIT_DEFAULT).await;
+        let child = self.base.internal_bus.receive_with_timeout(WAIT_DEFAULT).await;
 
         let child = child
             .map(|addr| {
@@ -100,7 +100,7 @@ impl Com {
     }
 
     async fn configure_downstream(&mut self) {
-        let child = self.external_bus.try_receive(WAIT_DEFAULT).await;
+        let child = self.external_bus.receive_with_timeout(WAIT_DEFAULT).await;
         match child {
             None => self
                 .base
@@ -119,9 +119,9 @@ impl Com {
     async fn configure_basic(&mut self) {
         self.external_bus.send(ModuleNeighborInfo::Basic.into());
         println!("sending p4 identity");
-        let parent = self.external_bus.try_receive(WAIT_DEFAULT).await;
+        let parent = self.external_bus.receive_with_timeout(WAIT_DEFAULT).await;
         let parent = parent
-            .map(|addr: (Ipv4Addr, String)| {
+            .map(|addr| {
                 addr.try_into()
                     .expect("did not receive module neighbor info!")
             })
@@ -132,7 +132,7 @@ impl Com {
 
 #[async_trait::async_trait]
 impl SysModule for Com {
-    async fn receive(&mut self) -> IPMessage {
+    async fn receive(&mut self) -> Vec<u8> {
         if !self.is_external_dead {
             return select! {
                ib_msg =  self.base.receive() => ib_msg,
@@ -143,7 +143,7 @@ impl SysModule for Com {
         }
     }
 
-    fn send(&mut self, _msg: IPMessage) {
+    fn send(&mut self, _msg: Vec<u8>) {
         //
         todo!("decide routing for sysmodule")
         // no-op

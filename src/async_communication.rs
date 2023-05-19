@@ -12,13 +12,13 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use crate::sysmodules::common::SysModule;
 
-pub type IPMessage = (Ipv4Addr, String);
+
 pub type SysmoduleRPC = Box<dyn FnOnce(&mut dyn SysModule) -> BoxFuture<()> + Send>;
 
 
 
 pub struct AsyncGateway<T> {
-    tx: UnboundedSender<T>,
+    pub tx: UnboundedSender<T>,
     rx: UnboundedReceiver<T>,
 }
 
@@ -44,7 +44,9 @@ pub trait AsyncChannel<T>: Send {
     fn send(&mut self, msg: T);
     async fn receive(&mut self) -> T;
 
-    async fn try_receive(&mut self, timeout: Duration) -> Option<T>;
+    async fn receive_with_timeout(&mut self, timeout: Duration) -> Option<T>;
+
+    fn try_receive(&mut self) -> Option<T>;
 }
 #[async_trait::async_trait]
 impl<T: std::marker::Send + Debug> AsyncChannel<T> for AsyncGateway<T> {
@@ -54,12 +56,15 @@ impl<T: std::marker::Send + Debug> AsyncChannel<T> for AsyncGateway<T> {
     async fn receive(&mut self) -> T {
         return self.rx.recv().await.expect("channel closed prematurely");
     }
-    async fn try_receive(&mut self, timeout: Duration) -> Option<T> {
+    async fn receive_with_timeout(&mut self, timeout: Duration) -> Option<T> {
         let ans = select! {
             x = self.receive().fuse() => Some(x),
             _ = tokio::time::sleep(timeout).fuse() => None
         };
         return ans;
+    }
+    fn try_receive(&mut self) -> Option<T>{
+        self.rx.try_recv().ok()
     }
 }
 
@@ -73,7 +78,10 @@ impl<T: std::marker::Send + Debug> AsyncChannel<T> for DeadExternalBus {
     fn send(&mut self, _msg: T) {
         // no-op
     }
-    async fn try_receive(&mut self, _timeout: Duration) -> Option<T> {
+    async fn receive_with_timeout(&mut self, _timeout: Duration) -> Option<T> {
         None
+    }
+    fn try_receive(&mut self) -> Option<T>{
+        return None;
     }
 }

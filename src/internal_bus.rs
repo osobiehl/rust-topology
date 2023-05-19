@@ -1,9 +1,9 @@
 use crate::async_communication::AsyncChannel;
-use crate::async_communication::{AsyncGateway, IPMessage};
+use crate::async_communication::{AsyncGateway};
 use futures::future::select_all;
 
 pub struct InternalBus {
-    subscribers: Vec<AsyncGateway<IPMessage>>,
+    subscribers: Vec<AsyncGateway<Vec<u8>>>,
 }
 
 impl InternalBus {
@@ -12,7 +12,7 @@ impl InternalBus {
             subscribers: vec![],
         }
     }
-    pub fn subscribe(&mut self, gateway: AsyncGateway<IPMessage>) {
+    pub fn subscribe(&mut self, gateway: AsyncGateway<Vec<u8>>) {
         self.subscribers.push(gateway);
     }
 

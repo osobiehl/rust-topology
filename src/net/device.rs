@@ -4,13 +4,7 @@ use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, IpCidr};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use rand::prelude::*;
-
-pub struct TokioChannel {
-    rx: UnboundedReceiver<Vec<u8>>,
-    tx: UnboundedSender<Vec<u8>>,
-}
-
-impl TokioChannel {}
+use crate::async_communication::{AsyncGateway, AsyncChannel};
 pub struct STDRx(pub(crate) Vec<u8>);
 impl smoltcp::phy::RxToken for STDRx {
     fn consume<R, F>(self, f: F) -> R
@@ -37,7 +31,7 @@ impl smoltcp::phy::TxToken for STDTx {
     }
 }
 
-impl Device for TokioChannel {
+impl Device for AsyncGateway<Vec<u8>> {
     type RxToken<'a> = STDRx;
     type TxToken<'a> = STDTx;
 
@@ -49,7 +43,7 @@ impl Device for TokioChannel {
     }
 
     fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
-        if let Ok(v) = self.rx.try_recv() {
+        if let Some(v) = self.try_receive() {
             return Some((STDRx(v), STDTx(self.tx.clone())));
         }
         return None;
@@ -59,14 +53,9 @@ impl Device for TokioChannel {
         Some(STDTx(self.tx.clone()))
     }
 }
-impl TokioChannel {
-    pub fn new(rx: UnboundedReceiver<Vec<u8>>, tx: UnboundedSender<Vec<u8>>) -> Self {
-        Self { tx, rx }
-    }
-}
+
 
 pub fn setup_if<D: phy::Device>( ip_address: IpCidr, device: &mut D ) -> Box<Interface> {
-    let _file_path = "output.txt";
     let mut config = Config::default();
     config.random_seed = random();
     config.hardware_addr = None;
