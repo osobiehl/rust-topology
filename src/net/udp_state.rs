@@ -1,5 +1,7 @@
 use crate::net::device::{STDRx,STDTx, setup_if};
 use futures::FutureExt;
+use ipnet::IpAdd;
+use log::{info, trace};
 use smoltcp::socket::udp::PacketBuffer;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address, Ipv6Address, IpEndpoint, IpListenEndpoint};
 use smoltcp::socket::{tcp, udp};
@@ -10,8 +12,12 @@ use std::task::{Poll, Context};
 use tokio::sync::Mutex;
 use std::pin::Pin;
 use std::future::Future;
-
-
+use async_trait::async_trait;
+#[async_trait]
+pub trait NetStack<D: smoltcp::phy::Device>{
+    async fn socket<T:Into<IpListenEndpoint>> (&self) -> AsyncUDPSocket<'_, D>;
+    async fn netif<'a>(&'a self) -> &'a mut UDPState<'a, D>;
+}
 
 pub struct AsyncUDPSocket<'a, D: smoltcp::phy::Device> {
     handle: SocketHandle,
@@ -38,7 +44,7 @@ impl <'a, D: smoltcp::phy::Device> AsyncUDPSocket<'a, D> {
         let s = state.sockets.get_mut::<udp::Socket>(self.handle);
         s.send_slice(&mut payload, endpoint).expect("could not send message!");
         drop(s);
-        state.poll();
+        state.poll_for_send(&endpoint.addr);
     }
 
 }
@@ -74,19 +80,21 @@ impl<'a, 'b , D: smoltcp::phy::Device> std::future::Future for UDPSocketRead<'a,
     }
 }
 
-
+use crate::net::device::NetifPair;
 
 pub struct UDPState<'a, D: smoltcp::phy::Device>{
     pub sockets: SocketSet<'a>,
     pub handles: Vec<SocketHandle>,
-    pub iface: Box<Interface>,
-    pub device: D
+    pub netifs: Vec<NetifPair<D>>,
+
 }
 
 impl<'a, D: smoltcp::phy::Device> UDPState<'a, D>{
-    pub fn new(iface: Box<Interface>, device: D)->Self{
-        Self { sockets: SocketSet::new(vec![]), handles: vec![], iface, device}
+    pub fn new(netifs: Vec<NetifPair<D>>)->Self{
+        Self { sockets: SocketSet::new(vec![]), handles: vec![], netifs}
     }
+
+
 
     pub fn new_socket<T: Into<IpListenEndpoint>>(&mut self, endpoint:T)->SocketHandle{
         let udp_rx_buffer1 = udp::PacketBuffer::new(
@@ -99,15 +107,56 @@ impl<'a, D: smoltcp::phy::Device> UDPState<'a, D>{
         );
         let mut udp_socket = udp::Socket::new(udp_rx_buffer1, udp_tx_buffer1);
         udp_socket.bind(endpoint).expect("could not bind to addr");
-
+        
         let udp_handle = self.sockets.add(udp_socket);
         self.handles.push(udp_handle.clone());
         
         return udp_handle;
     }
+
+    pub fn poll_for_send(&mut self, endpoint: &IpAddress)
+    {
+        if endpoint.is_unicast(){
+  
+            let mut done = false;
+            for iface in &mut self.netifs{
+                let mut found: bool = false;
+                let found = iface.iface.ip_addrs().iter().find( |cidr| cidr.contains_addr(endpoint) );
+                if let Some(x) = found {
+                    let timestamp = Instant::now();
+                    trace!("using interface: {} for request {}", x, endpoint );
+                    iface.iface.poll(timestamp, iface.device.as_mut(), &mut self.sockets);
+                    done = true;
+                    break;
+                }
+            }
+            if !done {
+                trace!("warn: no route found for {}", endpoint);
+            }
+        }
+        if endpoint.is_broadcast(){
+            trace!("sending broadcast through default netif");
+            self.poll();
+        }
+        else if endpoint.is_multicast(){
+            trace!("warn: multicast not supported yet");
+            self.poll();
+        }
+        else {
+            self.poll();
+        }
+    }
+
+
     pub fn poll(&mut self)-> bool{
         let timestamp = Instant::now();
-        self.iface.poll(timestamp, &mut self.device, &mut self.sockets)
+        let mut worked = false;
+        for x in self.netifs.iter_mut(){
+            if x.iface.poll(timestamp, x.device.as_mut(), &mut self.sockets) == true {
+                worked = true;
+            }
+        }
+        return worked;
     }
 
 

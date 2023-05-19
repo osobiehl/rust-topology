@@ -38,6 +38,7 @@ impl Device for AsyncGateway<Vec<u8>> {
     fn capabilities(&self) -> DeviceCapabilities {
         let mut d = DeviceCapabilities::default();
         d.medium = Medium::Ip;
+        
         d.max_transmission_unit = 65000;
         return d ;
     }
@@ -53,17 +54,26 @@ impl Device for AsyncGateway<Vec<u8>> {
         Some(STDTx(self.tx.clone()))
     }
 }
+pub struct  NetifPair<D: smoltcp::phy::Device> {
+    pub iface: Box<Interface>,
+    pub device: Box<D>
+}
 
-
-pub fn setup_if<D: phy::Device>( ip_address: IpCidr, device: &mut D ) -> Box<Interface> {
+pub fn setup_if<D: phy::Device>( ip_address: IpCidr, mut device: Box<D> ) -> NetifPair<D> {
     let mut config = Config::default();
     config.random_seed = random();
     config.hardware_addr = None;
     
-    let mut netif = Interface::new(config, device);
+    let mut netif = Interface::new(config, device.as_mut());
     netif.update_ip_addrs(|addrs| {
         let _ = addrs.push(ip_address).map_err( |_| {println!("could not add ip addr: {}", ip_address)});
     });
+    netif.set_any_ip(false);
 
-    return Box::new(netif)
+    
+
+    return NetifPair{
+        iface: Box::new(netif),
+        device
+    }
 }

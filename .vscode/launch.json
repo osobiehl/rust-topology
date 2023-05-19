@@ -31,14 +31,14 @@
                     "test",
                     "--no-run",
                     "--bin=topology_concept",
-                    "--package=topology_concept"
+                    "--package=topology_concept",
                 ],
                 "filter": {
                     "name": "topology_concept",
                     "kind": "bin"
                 }
             },
-            "args": [],
+            "args": ["--test-threads=1"],
             "cwd": "${workspaceFolder}"
         }
     ]

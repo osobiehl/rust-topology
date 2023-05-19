@@ -72,6 +72,7 @@ use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address, Ipv6Address
 use smoltcp::socket::{tcp, udp};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use async_communication::{AsyncChannel};
 
 
 #[tokio::test(flavor = "multi_thread")]
@@ -81,18 +82,16 @@ async fn test_netif_setup(){
 
 
     let ip_1 = IpCidr::new(IpAddress::v4(192, 168, 69, 1), 24);
-    let eth1 = EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x01]);
 
 
-    let mut stack1 = setup_if(ip_1, &mut dev1);
+    let mut stack1 = setup_if(ip_1, Box::new(dev1));
     
     let ip_2 = IpCidr::new(IpAddress::v4(192, 168, 69, 2), 24);
-    let eth2 = EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x02]);
 
-    let stack2 = setup_if(ip_2, &mut dev2);
+    let stack2 = setup_if(ip_2, Box::new(dev2));
 
-    let mut udp_1 = UDPState::new(stack1, dev1);
-    let mut udp_2 = UDPState::new(stack2, dev2);
+    let mut udp_1 = UDPState::new(vec![stack1]);
+    let mut udp_2 = UDPState::new(vec![stack2]);
 
 
     let handle_send = udp_1.new_socket(6969);
@@ -127,19 +126,19 @@ use net::udp_state::{AsyncUDPSocket, UDPSocketRead};
 async fn test_async_netif(){
     let (mut dev1, mut dev2 ) = AsyncGateway::<Vec<u8>>::new();
 
+
     let ip_1 = IpCidr::new(IpAddress::v4(192, 168, 69, 1), 24);
-    let eth1 = EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x01]);
 
 
-    let mut stack1 = setup_if(ip_1, &mut dev1);
+    let mut stack1 = setup_if(ip_1, Box::new(dev1));
     
     let ip_2 = IpCidr::new(IpAddress::v4(192, 168, 69, 2), 24);
-    let eth2 = EthernetAddress([0x02, 0x00, 0x00, 0x00, 0x00, 0x02]);
 
-    let stack2 = setup_if(ip_2, &mut dev2);
+    let stack2 = setup_if(ip_2, Box::new(dev2));
 
-    let mut udp_1 = Arc::new(Mutex::new(UDPState::new(stack1, dev1) ) );
-    let mut udp_2 = Arc::new(Mutex::new(UDPState::new(stack2, dev2)));
+
+    let mut udp_1 = Arc::new(Mutex::new(UDPState::new(vec![stack1]) ) );
+    let mut udp_2 = Arc::new(Mutex::new(UDPState::new(vec![stack2])));
 
     let mut socket1 = AsyncUDPSocket::new(6969, udp_1.clone()).await;
     let mut socket2 = AsyncUDPSocket::new(6969, udp_2.clone()).await;
@@ -153,6 +152,139 @@ async fn test_async_netif(){
     
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn test_concurrent_wait(){
+    let (mut dev1, mut dev2 ) = AsyncGateway::<Vec<u8>>::new();
+
+
+    let ip_1 = IpCidr::new(IpAddress::v4(192, 168, 69, 1), 24);
+
+
+    let mut stack1 = setup_if(ip_1, Box::new(dev1));
+    
+    let ip_2 = IpCidr::new(IpAddress::v4(192, 168, 69, 2), 24);
+
+    let stack2 = setup_if(ip_2, Box::new(dev2));
+
+
+    let mut udp_1 = Arc::new(Mutex::new(UDPState::new(vec![stack1]) ) );
+    let mut udp_2 = Arc::new(Mutex::new(UDPState::new(vec![stack2])));
+
+    let mut socket1 = AsyncUDPSocket::new(6969, udp_1.clone()).await;
+    let mut socket2 = AsyncUDPSocket::new(6969, udp_2.clone()).await;
+    let mut socket_dummy = AsyncUDPSocket::new(6968, udp_2.clone()).await;
+
+    let hello = "hello_world!";
+    socket1.send(Vec::from(hello.as_bytes()), smoltcp::wire::IpEndpoint { addr: IpAddress::v4(192, 168, 69, 2), port: 6969 }).await;
+    
+    let incoming = futures::select! {
+        x = socket2.recv().fuse() => Some(x),
+        _ = socket_dummy.recv().fuse() => None
+    };
+    let incoming = incoming.expect("expect to receive something!");
+    let (v, _ ) = incoming.unwrap();
+
+    assert_eq!(&v[..], hello.as_bytes(), "receive not equal to send!");
+    
+    
+}
+
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_second_netif_ingress(){
+
+    let ( dev1,  mut stub1) = AsyncGateway::<Vec<u8>>::new();
+    let  ( dev2, mut  stub2 ) = AsyncGateway::<Vec<u8>>::new(); 
+
+    let ip_1 = IpCidr::new(IpAddress::v4(192, 168, 69, 1), 24);
+
+    let ip_2 = IpCidr::new(IpAddress::v4(192, 169, 0, 1), 24);
+
+
+    let stack1 = setup_if(ip_1, Box::new(dev1));
+    let stack2 = setup_if(ip_2, Box::new(dev2));
+
+    let mut udp_1 = Arc::new(Mutex::new(UDPState::new(vec![stack1, stack2]) ) );
+
+
+    let hello = "hello_world!";
+    let mut socket1 = AsyncUDPSocket::new(6969, udp_1.clone()).await;
+    let mut socket2 = AsyncUDPSocket::new(smoltcp::wire::IpEndpoint { addr: IpAddress::v4(192, 169, 0, 1), port: 6968 }, udp_1.clone()).await;
+
+    socket1.send(Vec::from(hello.as_bytes()), smoltcp::wire::IpEndpoint { addr: IpAddress::v4(192, 169, 0, 1), port: 6968 }).await;
+    let r = stub2.try_receive().expect("stub should have received data");
+    //loop back to itself :)
+    stub2.send(r);
+
+    let r = socket2.recv().await.expect("received nothing!");
+
+
+        
+}
+use simple_logger::SimpleLogger;
+use log::LevelFilter;
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_broadcast_ability(){
+    simple_logger::init_with_level(log::Level::Trace);
+    let ( dev1,   dev2) = AsyncGateway::<Vec<u8>>::new();
+
+    let ip_1 = IpCidr::new(IpAddress::v4(192, 168, 69, 1), 24);
+
+    let ip_2 = IpCidr::new(IpAddress::v4(192, 169, 0, 1), 24);
+
+
+    let stack1 = setup_if(ip_1, Box::new(dev1));
+    let stack2 = setup_if(ip_2, Box::new(dev2));
+
+    let mut udp_1 = Arc::new(Mutex::new(UDPState::new(vec![stack1, stack2]) ) );
+
+
+    let hello = "hello_world!";
+    let mut socket1 = AsyncUDPSocket::new(6969, udp_1.clone()).await;
+    let mut socket2 = AsyncUDPSocket::new(smoltcp::wire::IpEndpoint { addr: IpAddress::v4(192, 169, 0, 1), port: 6968 }, udp_1.clone()).await;
+
+    socket1.send(Vec::from(hello.as_bytes()), smoltcp::wire::IpEndpoint { addr: IpAddress::v4(255, 255, 255, 255), port: 6968 }).await;
+
+    let r = socket2.recv().await.expect("received nothing!");
+
+
+        
+}
+
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_two_netif_response(){
+
+    let (mut dev1, mut test_netif_1 ) = AsyncGateway::<Vec<u8>>::new();
+    let (mut dev2, mut test_netif_2 ) = AsyncGateway::<Vec<u8>>::new();
+
+    let ip_1 = IpCidr::new(IpAddress::v4(192, 168, 69, 1), 24);
+
+    let ip_2 = IpCidr::new(IpAddress::v4(192, 169, 0, 1), 24);
+
+
+    let stack1 = setup_if(ip_1, Box::new(dev1));
+    let stack2 = setup_if(ip_2, Box::new(dev2));
+
+    let mut udp_1 = Arc::new(Mutex::new(UDPState::new(vec![stack1, stack2]) ) );
+
+
+    let hello = "hello_world!";
+    let mut socket1 = AsyncUDPSocket::new(6969, udp_1.clone()).await;
+
+    socket1.send(Vec::from(hello.as_bytes()), smoltcp::wire::IpEndpoint { addr: IpAddress::v4(192, 168, 69, 2), port: 6969 }).await;
+    assert! (test_netif_1.try_receive().is_some());
+    assert!( test_netif_2.try_receive().is_none());
+
+    let mut socket2 = AsyncUDPSocket::new(smoltcp::wire::IpEndpoint { addr: IpAddress::v4(192, 169, 0, 1), port: 6968 }, udp_1.clone()).await;
+
+    socket2.send(Vec::from(hello.as_bytes()), smoltcp::wire::IpEndpoint { addr: IpAddress::v4(192, 169, 0, 2), port: 6962 }).await;
+
+    assert! (test_netif_1.try_receive().is_none());
+    assert!( test_netif_2.try_receive().is_some());
+        
+}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_advanced_basic() {

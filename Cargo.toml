@@ -18,3 +18,5 @@ serde_json = "1.0.96"
 tokio = {version="1.28.0", features=["sync", "rt-multi-thread", "rt", "macros", "time"]}
 rand = "0.8.5"
 smoltcp = { version = "0.9.1", features = ["std", "medium-ip", "proto-ipv4", "socket-udp", "log"] }
+simple_logger = "4.1.0"
+log = "0.4.17"

@@ -2,21 +2,25 @@ use crate::async_communication::{AsyncGateway, SysmoduleRPC};
 use crate::{async_communication::AsyncChannel};
 use async_trait::async_trait;
 use either::Either;
+use tokio::sync::Mutex;
 use std::net::Ipv4Addr;
 
 use std::time::Duration;
 use tokio::select;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::mpsc::UnboundedSender;
-
+use crate::net::udp_state::{AsyncUDPSocket, NetStack, UDPState};
 use futures::future::FutureExt;
 
 pub type TestingReceiver = UnboundedReceiver<SysmoduleRPC>;
 pub type TestingSender = UnboundedSender<SysmoduleRPC>;
+
+pub type Device = AsyncGateway<Vec<u8>>;
 pub struct BasicModule {
     pub(super) internal_bus: AsyncGateway<Vec<u8>>,
     pub(super) testing_interface: TestingReceiver,
     pub(super) address: Ipv4Addr,
+    // netif: Arc<Mutex<UDPState<'_, Device>>>
 }
 
 impl BasicModule {
@@ -50,11 +54,9 @@ pub trait SysModuleStartup {
 }
 
 ///
-/// This trait can be used when sending commands to a module to
-/// override its behaviour and make it act differently
-/// NOTE: this should only be used to verify correctness of the system
+/// TODO: refactor this trait
 #[async_trait]
-pub trait SysModule: Send {
+pub trait SysModule: Send  + {
     async fn receive(&mut self) -> Vec<u8>;
     async fn try_receive(&mut self, timeout: Duration) -> Option<Vec<u8>> {
         let ans = select! {
