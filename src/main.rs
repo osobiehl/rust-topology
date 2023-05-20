@@ -2,7 +2,7 @@
 mod async_communication;
 mod communication;
 mod internal_bus;
-// mod p4_advanced;
+mod p4_advanced;
 mod p4_basic;
 mod sysmodule;
 mod sysmodules;
@@ -20,8 +20,8 @@ use async_communication::{AsyncGateway, DeadExternalBus};
 use communication::IdentityResolver;
 
 use futures::FutureExt;
-// use p4_advanced::P4Advanced;
-// use p4_basic::P4Basic;
+use p4_advanced::P4Advanced;
+use p4_basic::P4Basic;
 
 
 
@@ -68,6 +68,8 @@ async fn main() {
 }
 
 mod test{
+use crate::p4_basic::P4Basic;
+
 pub use super::*;
 
 pub use net::udp_state::UDPState;
@@ -353,35 +355,35 @@ async fn test_internal_bus_communication(){
         
 }
 
-// #[tokio::test(flavor = "multi_thread")]
-// async fn test_advanced_basic() {
-//     let (basic, adv) = AsyncGateway::new();
-//     let mut basic = P4Basic::new(Box::new(basic));
+#[tokio::test(flavor = "multi_thread")]
+async fn test_advanced_basic() {
+    let mut basic = P4Basic::new(None);
+    basic.start();
+    
+    // let dead = DeadExternalBus {};
+    // let advanced = P4Advanced::new(Some(Box::new(dead)), Some(Box::new(adv)));
+    // let com_send = basic.com.1.clone();
 
-//     let dead = DeadExternalBus {};
-//     let advanced = P4Advanced::new(Some(Box::new(dead)), Some(Box::new(adv)));
-//     let com_send = basic.com.1.clone();
+    // let end_adv = tokio::spawn(async move {
+    //     advanced.start().await;
+    // });
+    // let end = tokio::spawn(async move {
+    //     basic.start().await;
+    // });
+    // let mut f = async move |sys: &mut dyn SysModule| {sys.send("hello".as_bytes().to_vec())};
+    // let func: SysmoduleRPC = Box::new( move |sys: &mut dyn SysModule|
+    // {
+    //     return async
+    //     {
+    //         sys.send( "hello from com".as_bytes().to_vec());
 
-//     let end_adv = tokio::spawn(async move {
-//         advanced.start().await;
-//     });
-//     let end = tokio::spawn(async move {
-//         basic.start().await;
-//     });
-//     let mut f = async move |sys: &mut dyn SysModule| {sys.send("hello".as_bytes().to_vec())};
-//     let func: SysmoduleRPC = Box::new( move |sys: &mut dyn SysModule|
-//     {
-//         return async
-//         {
-//             sys.send( "hello from com".as_bytes().to_vec());
-
-//         }.boxed()
-//     });
-//     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-//     com_send.send(
-//     func);
-//     // end_adv.await;
-//     // end.await;
-// }
+    //     }.boxed()
+    // });
+    // tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    // com_send.send(
+    // func);
+    // end_adv.await;
+    // end.await;
+}
 
 }

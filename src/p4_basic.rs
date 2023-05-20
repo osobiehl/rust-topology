@@ -31,7 +31,7 @@ impl P4Basic {
         
         bus.subscribe(ib_hmi);
         bus.subscribe(ib_pv);
-        let ( gateway_netif, ib_gateway) = new_netif(IpCidr::new(TRANSIENT_HMI_ID, 24));
+        let ( gateway_netif, ib_gateway) = new_netif(IpCidr::new(TRANSIENT_GATEWAY_ID, 24));
         bus.subscribe(ib_gateway);
 
         // this should be an enum but oh well
@@ -84,7 +84,9 @@ impl P4Basic {
             }
         });
         for i in futures {
-            _ = i.await;
+            _ = i.await.expect("handle panicked!");
         }
+        let _ = bus.await;
+
     }
 }
