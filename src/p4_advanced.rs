@@ -23,7 +23,6 @@ impl P4Advanced {
         hub: Option<AsyncGateway<Vec<u8>>>,
         basic: Option<AsyncGateway<Vec<u8>>>,
     ) -> Self {
-        todo!();
         let mut bus = InternalBus::new();
         let mut pv = None;
         let mut hub2adv = None;
@@ -50,9 +49,6 @@ impl P4Advanced {
             let  (pv_, test) = new_module(vec![gateway_netif]);
             pv = Some((PV(pv_), test));
         }
-
-        todo!();
-
         let (hmi, ib_hmi, hmi_test_tx) = new_internal_module(IpCidr::new(TRANSIENT_HMI_ID, 24));
 
         bus.subscribe(ib_hmi);

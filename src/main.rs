@@ -229,7 +229,6 @@ async fn test_second_netif_ingress(){
 }
 use simple_logger::SimpleLogger;
 use log::{LevelFilter, trace, logger};
-//     simple_logger::init_with_level(log::Level::Trace);
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_broadcast_ability(){
@@ -357,8 +356,23 @@ async fn test_internal_bus_communication(){
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_advanced_basic() {
-    let mut basic = P4Basic::new(None);
-    basic.start();
+        simple_logger::init_with_level(log::Level::Trace);
+
+    let (adv, bas) = AsyncGateway::<Vec<u8>>::new();
+
+    let  advanced = P4Advanced::new(None, Some(adv));
+    let  basic = P4Basic::new(Some(bas));
+
+    let end_adv = tokio::spawn(async move {
+        advanced.start().await;
+    });
+    let end = tokio::spawn(async move {
+        basic.start().await;
+    });
+
+    end_adv.await;
+    end.await;
+
     
     // let dead = DeadExternalBus {};
     // let advanced = P4Advanced::new(Some(Box::new(dead)), Some(Box::new(adv)));

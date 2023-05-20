@@ -1,13 +1,12 @@
-
 use std::time::Duration;
 
-use super::common::{BasicModule, SysModuleStartup};
+use super::common::{BasicModule, SysModuleStartup, TRANSIENT_GATEWAY_ID};
+use crate::net::udp_state::NetStack;
+use crate::sysmodule::ModuleNeighborInfo::{Advanced, Basic, Hub, NoNeighbor};
+use crate::sysmodule::{BasicTransmitter, HubIndex, ModuleNeighborInfo};
 
-use crate::sysmodule::{
-    HubIndex,
-};
-use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address, Ipv6Address};
-
+use futures::future;
+use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, IpEndpoint, Ipv4Address, Ipv6Address};
 
 #[derive(Clone, Copy, Debug)]
 pub enum ComType {
@@ -17,9 +16,13 @@ pub enum ComType {
     Basic,
 }
 
-impl ComType{
-    pub fn external_bus_ip(&self)->IpCidr{
-        return IpCidr::new(IpAddress::v4(192, 168, 70, 1), 24);
+const EXTERNAL_BUS_TRANSIENT_ADDRESS: IpAddress = IpAddress::v4(192, 168, 70, 1);
+const EXTERNAL_BUS_TRANSIENT_PORT: u16 = 6969;
+const INTERNAL_BUS_TRANSIENT_COM_PORT: u16 = 6968;
+
+impl ComType {
+    pub fn external_bus_ip(&self) -> IpCidr {
+        return IpCidr::new(EXTERNAL_BUS_TRANSIENT_ADDRESS, 24);
     }
 }
 
@@ -42,17 +45,14 @@ impl ComType{
 //     }
 // }
 
-pub struct Com{
+pub struct Com {
     base: BasicModule,
     initial_configuration: ComType,
     is_external_dead: bool,
 }
 const WAIT_DEFAULT: Duration = Duration::from_millis(5);
 impl Com {
-    pub fn new(
-        base: BasicModule,
-        initial_configuration: ComType,
-    ) -> Self {
+    pub fn new(base: BasicModule, initial_configuration: ComType) -> Self {
         Self {
             base,
             initial_configuration,
@@ -73,7 +73,60 @@ impl Com {
     }
 
     async fn configure_upstream(&mut self) {
-        todo!();
+        let mut parent_socket: crate::net::udp_state::AsyncUDPSocket<
+            crate::net::device::AsyncGatewayDevice<
+                crate::async_communication::AsyncGateway<Vec<u8>>,
+            >,
+        > = self.base.socket(EXTERNAL_BUS_TRANSIENT_PORT).await;
+        let mut child_socket: crate::net::udp_state::AsyncUDPSocket<
+            crate::net::device::AsyncGatewayDevice<
+                crate::async_communication::AsyncGateway<Vec<u8>>,
+            >,
+        > = self.base.socket(INTERNAL_BUS_TRANSIENT_COM_PORT).await;
+
+        let parent_res: Result<(Vec<u8>, IpEndpoint), ()> =
+            parent_socket.receive_with_timeout(WAIT_DEFAULT).await;
+        let parent: ModuleNeighborInfo = parent_res
+            .map(|(v, _)| v.try_into().expect("did not receive neighbor info!"))
+            .unwrap_or(ModuleNeighborInfo::NoNeighbor);
+
+        let child_res = child_socket.receive_with_timeout(WAIT_DEFAULT).await;
+
+        let child = child_res
+            .map(|(addr, _from)| {
+                addr.try_into()
+                    .expect("did not receive module neighbor info!")
+            })
+            .unwrap_or(ModuleNeighborInfo::NoNeighbor);
+
+        let state = match (parent, child) {
+            (NoNeighbor, NoNeighbor) => ModuleNeighborInfo::Advanced(None, None),
+            (Hub(i), NoNeighbor) => Advanced(Some(i), None),
+            (NoNeighbor, Basic) => Advanced(None, Some(BasicTransmitter())),
+            (Hub(i), Basic) => Advanced(Some(i), Some(BasicTransmitter())),
+            (_, _) => panic!("unknown configuration!"),
+        };
+        println!("state of advanced: {:?}", &state);
+
+        parent_socket
+            .send(
+                state.clone().into(),
+                IpEndpoint {
+                    addr: EXTERNAL_BUS_TRANSIENT_ADDRESS,
+                    port: EXTERNAL_BUS_TRANSIENT_PORT,
+                },
+            )
+            .await;
+        child_socket
+            .send(
+                state.clone().into(),
+                IpEndpoint {
+                    addr: TRANSIENT_GATEWAY_ID,
+                    port: INTERNAL_BUS_TRANSIENT_COM_PORT,
+                },
+            )
+            .await;
+
         // let parent = self.external_bus.receive_with_timeout(WAIT_DEFAULT).await;
         // let parent = parent
         //     .map(|addr | {
@@ -105,7 +158,49 @@ impl Com {
     }
 
     async fn configure_downstream(&mut self) {
-        todo!();
+        let mut socket_external_bus: crate::net::udp_state::AsyncUDPSocket<
+            crate::net::device::AsyncGatewayDevice<
+                crate::async_communication::AsyncGateway<Vec<u8>>,
+            >,
+        > = self.base.socket(EXTERNAL_BUS_TRANSIENT_PORT).await;
+        let mut socket_internal_bus = self.base.socket(INTERNAL_BUS_TRANSIENT_COM_PORT).await;
+
+        let child = socket_external_bus.receive_with_timeout(WAIT_DEFAULT).await;
+
+        match child {
+            Err(_) => {
+                println!("warn: COM module with no child, todo deactivate")
+            }
+            Ok(_p) => {
+                socket_internal_bus
+                    .send(
+                        ModuleNeighborInfo::Basic.into(),
+                        IpEndpoint {
+                            addr: TRANSIENT_GATEWAY_ID,
+                            port: INTERNAL_BUS_TRANSIENT_COM_PORT,
+                        },
+                    )
+                    .await;
+                let state: ModuleNeighborInfo = socket_internal_bus
+                    .receive_with_timeout(Duration::from_millis(1))
+                    .await
+                    .map_or(
+                        ModuleNeighborInfo::Advanced(None, Some(BasicTransmitter())),
+                        |(v, _from)| v.try_into().expect("did not receivemodule neighbor info"),
+                    );
+                println!("sending downstream info to child!");
+                socket_external_bus
+                    .send(
+                        state.into(),
+                        IpEndpoint {
+                            addr: EXTERNAL_BUS_TRANSIENT_ADDRESS,
+                            port: EXTERNAL_BUS_TRANSIENT_PORT,
+                        },
+                    )
+                    .await;
+            }
+        }
+
         // let child = self.external_bus.receive_with_timeout(WAIT_DEFAULT).await;
         // match child {
         //     None => self
@@ -123,31 +218,41 @@ impl Com {
     }
 
     async fn configure_basic(&mut self) {
-        todo!();
-        // self.external_bus.send(ModuleNeighborInfo::Basic.into());
-        // println!("sending p4 identity");
-        // let parent = self.external_bus.receive_with_timeout(WAIT_DEFAULT).await;
-        // let parent = parent
-        //     .map(|addr| {
-        //         addr.try_into()
-        //             .expect("did not receive module neighbor info!")
-        //     })
-        //     .unwrap_or(ModuleNeighborInfo::NoNeighbor);
-        // println!("state from pov of basic: {:?}", &parent);
+        println!("configuring basic...");
+        let mut socket_parent: crate::net::udp_state::AsyncUDPSocket<
+            crate::net::device::AsyncGatewayDevice<
+                crate::async_communication::AsyncGateway<Vec<u8>>,
+            >,
+        > = self.base.socket(EXTERNAL_BUS_TRANSIENT_PORT).await;
+        socket_parent
+            .send(
+                ModuleNeighborInfo::Basic.into(),
+                IpEndpoint {
+                    addr: EXTERNAL_BUS_TRANSIENT_ADDRESS,
+                    port: EXTERNAL_BUS_TRANSIENT_PORT,
+                },
+            )
+            .await;
+        println!("sending p4 identity");
+        let parent = socket_parent.receive_with_timeout(WAIT_DEFAULT).await;
+
+        let mut parent_info: ModuleNeighborInfo = ModuleNeighborInfo::NoNeighbor;
+        if let Ok((val, endpoint)) = parent {
+            parent_info = val
+                .try_into()
+                .expect("did not receive module info on external bus");
+        }
+        println!("state from pov of basic: {:?}", &parent_info);
     }
 }
-
 
 #[async_trait::async_trait]
 impl SysModuleStartup for Com {
     async fn run_once(&mut self) {
-        todo!();
-        // loop {
-        //     let msg = self.base.internal_bus.receive().await;
-        //     println!("COM module: recv {:?}", msg);
-        // }
+        let _: usize = future::pending().await;
     }
     async fn on_start(&mut self) {
+        println!("starting!!");
         match self.initial_configuration {
             ComType::HubCom(i) => self.configure_hub(i).await,
             ComType::AdvUpstream => self.configure_upstream().await,

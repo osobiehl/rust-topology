@@ -7,6 +7,7 @@ use smoltcp::wire::IpListenEndpoint;
 use tokio::sync::Mutex;
 
 
+use std::future;
 use std::sync::Arc;
 
 
@@ -76,10 +77,11 @@ impl SysModuleStartup for BasicModule {
         // no-op TODO: get address from COM
     }
     async fn run_once(&mut self) {
+        let x : u32 = future::pending().await;
         // let test_future = Box::pin(self.testing_interface.recv());
         // TODO: change this
-        let closure = self.testing_interface.recv().await.unwrap();
-        closure(self).await;
+        // let closure = self.testing_interface.recv().await.unwrap();
+        // closure(self).await;
     }
 }
 
