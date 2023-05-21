@@ -42,6 +42,7 @@ impl<T> AsyncGateway<T> {
 
 }
 
+
 impl AsyncGateway<Vec<u8>>{
     pub fn new_async_device() -> (AsyncGatewayDevice<Self>, AsyncGatewayDevice<Self>){
         let (g_a, g_b ) = Self::new();

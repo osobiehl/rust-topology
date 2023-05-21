@@ -1,4 +1,3 @@
-// ip shenanigans
 // must check that we are within the subnet for middle component
 // net, also subnet
 // MODULE_ID.SUBMODULE_NET.SYSMODULE ID

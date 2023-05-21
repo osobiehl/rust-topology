@@ -3,7 +3,7 @@ use crate::net::device::AsyncGatewayDevice;
 
 use async_trait::async_trait;
 
-use smoltcp::wire::IpListenEndpoint;
+use smoltcp::wire::{IpListenEndpoint, IpCidr, Ipv4Cidr};
 use tokio::sync::Mutex;
 
 
@@ -15,13 +15,13 @@ use std::time::Duration;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::mpsc::UnboundedSender;
 use crate::net::udp_state::{AsyncUDPSocket, NetStack, UDPState};
-use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address, Ipv6Address};
+use smoltcp::wire::{EthernetAddress, IpAddress, Ipv4Address, Ipv6Address};
 
 pub const TRANSIENT_HMI_ID: IpAddress = IpAddress::v4(192, 168, 69, 1);
 pub const TRANSIENT_PV_ID: IpAddress = IpAddress::v4(192, 168, 69, 2);
 pub const TRANSIENT_PI_ID: IpAddress = IpAddress::v4(192, 168, 69, 3);
 pub const TRANSIENT_GATEWAY_ID: IpAddress = IpAddress::v4(192, 168, 69, 4);
-
+pub const ADDRESS_ASSIGNMENT_PORT: u16 = 6967;
 
 
 
@@ -75,7 +75,20 @@ pub trait SysModuleStartup {
 #[async_trait]
 impl SysModuleStartup for BasicModule {
     async fn on_start(&mut self) {
-        // no-op TODO: get address from COM
+        let mut socket_internal_bus = self.socket(ADDRESS_ASSIGNMENT_PORT).await;
+        let (val,req) = socket_internal_bus.receive_with_timeout(Duration::from_millis(1000)).await.expect("module did not receive message on startup");
+        assert!(val.len() == 4, "non-ipv4 message received!");
+        let new_ip: Ipv4Address = Ipv4Address::new(val[0], val[1], val[2], val[3]);
+        println!("RECV new ip adddr: {}\n\n", new_ip);
+        self.modify_netif( move |state| {
+            state.netifs[0].iface.update_ip_addrs( |addrs| {
+                addrs.clear();
+                addrs.push(IpCidr::Ipv4(Ipv4Cidr::new(new_ip, 24)));
+            })
+        }).await
+        // now we have the sent ip addr
+
+
     }
     async fn run_once(&mut self) {
         tokio::time::sleep(Duration::from_millis(1000)).await;

@@ -83,7 +83,10 @@ impl P4Basic {
                 self.bus.run_once().await;
             }
         });
-        let (event, index, remaining) = select_all(futures).await;
+        bus.await;
+        for f in futures{
+            let _ = f.await;
+        }
 
 
     }

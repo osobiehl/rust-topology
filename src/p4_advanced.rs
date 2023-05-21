@@ -80,12 +80,14 @@ impl P4Advanced {
         futures.push(spawn_test_sysmodule(self.hmi.0 .0));
 
         futures.push(tokio::spawn(async move {
-
+            loop{
                 self.bus.run_once().await;
-
+            }
         }));
-        //return on first end
-        let (event, index, remaining) = select_all(futures).await;
+
+        for f in futures{
+            let _ = f.await;
+        }
        
     }
 }

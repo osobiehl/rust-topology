@@ -3,8 +3,8 @@ use std::time::Duration;
 use super::common::{BasicModule, SysModuleStartup, TRANSIENT_GATEWAY_ID};
 use crate::net::udp_state::NetStack;
 use crate::sysmodule::ModuleNeighborInfo::{Advanced, Basic, Hub, NoNeighbor};
-use crate::sysmodule::{BasicTransmitter, HubIndex, ModuleNeighborInfo};
-
+use crate::sysmodule::{BasicTransmitter, HubIndex, ModuleNeighborInfo, determine_ip, Sysmodule, Transmitter};
+use crate::sysmodules::common::{TRANSIENT_PI_ID, TRANSIENT_PV_ID, TRANSIENT_HMI_ID, ADDRESS_ASSIGNMENT_PORT};
 use futures::future;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, IpEndpoint, Ipv4Address, Ipv6Address};
 
@@ -14,6 +14,17 @@ pub enum ComType {
     AdvUpstream,
     AdvDownstream,
     Basic,
+}
+
+impl Into<Transmitter> for ComType{
+    fn into(self) -> Transmitter {
+        match self {
+            Self::HubCom(_) => Transmitter::Hub,
+            Self::AdvUpstream => Transmitter::Advanced,
+            Self::AdvDownstream => Transmitter::Advanced,
+            Self::Basic => Transmitter::Basic
+        }
+    }
 }
 
 const EXTERNAL_BUS_TRANSIENT_ADDRESS: IpAddress = IpAddress::v4(192, 168, 70, 1);
@@ -126,7 +137,7 @@ impl Com {
                 },
             )
             .await;
-
+        self.assign_ips(state).await;
         // let parent = self.external_bus.receive_with_timeout(WAIT_DEFAULT).await;
         // let parent = parent
         //     .map(|addr | {
@@ -166,7 +177,7 @@ impl Com {
         let mut socket_internal_bus = self.base.socket(INTERNAL_BUS_TRANSIENT_COM_PORT).await;
 
         let child = socket_external_bus.receive_with_timeout(WAIT_DEFAULT).await;
-
+        println!("received from child! ");
         match child {
             Err(_) => {
                 println!("warn: COM module with no child, todo deactivate")
@@ -182,7 +193,7 @@ impl Com {
                     )
                     .await;
                 let state: ModuleNeighborInfo = socket_internal_bus
-                    .receive_with_timeout(Duration::from_millis(1))
+                    .receive_with_timeout(Duration::from_millis(2))
                     .await
                     .map_or(
                         ModuleNeighborInfo::Advanced(None, Some(BasicTransmitter())),
@@ -191,13 +202,17 @@ impl Com {
                 println!("sending downstream info to child!");
                 socket_external_bus
                     .send(
-                        state.into(),
+                        state.clone().into(),
                         IpEndpoint {
                             addr: EXTERNAL_BUS_TRANSIENT_ADDRESS,
                             port: EXTERNAL_BUS_TRANSIENT_PORT,
                         },
                     )
                     .await;
+
+                if let ModuleNeighborInfo::Advanced(None, _ ) = state.clone(){
+                    self.assign_ips(state).await;
+                }
             }
         }
 
@@ -243,6 +258,27 @@ impl Com {
                 .expect("did not receive module info on external bus");
         }
         println!("state from pov of basic: {:?}", &parent_info);
+        self.assign_ips(parent_info).await;
+        
+    }
+
+
+    async fn assign_ips(&mut self, module_info: ModuleNeighborInfo){
+        let transmitter: Transmitter = self.initial_configuration.into();
+        const SYSMODULES: [(IpAddress,  Sysmodule); 3] = [
+            (TRANSIENT_PI_ID, Sysmodule::PI),
+            (TRANSIENT_PV_ID, Sysmodule::PV),
+            (TRANSIENT_HMI_ID, Sysmodule::HMI)
+        ];
+
+        for (addr, module) in SYSMODULES {
+            let new_ip = determine_ip(&module, &transmitter, &module_info);
+            let mut s = self.base.socket( ADDRESS_ASSIGNMENT_PORT).await;
+            
+            s.send(Vec::from(new_ip.0), IpEndpoint {addr, port: ADDRESS_ASSIGNMENT_PORT }).await;
+            
+        }
+
     }
 }
 
