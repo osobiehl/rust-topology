@@ -370,7 +370,7 @@ async fn test_advanced_basic() {
         basic.start().await;
     });
 
-    end_adv.await;
+    let a = end_adv.await;
     end.await;
 
     

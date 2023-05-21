@@ -1,0 +1,13 @@
+2 requirements:
+- general "domain" identity
+
+
+w  . x .y.z where
+w: NetworkIndex
+x: (reserved)
+y: Device idx
+z: sysmodule
+192.168.0.1
+193.168.0.1
+194.168.0.1
+195.168.0.1

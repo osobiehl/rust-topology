@@ -9,6 +9,7 @@ use tokio::sync::Mutex;
 
 use std::future;
 use std::sync::Arc;
+use std::time::Duration;
 
 
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -77,7 +78,7 @@ impl SysModuleStartup for BasicModule {
         // no-op TODO: get address from COM
     }
     async fn run_once(&mut self) {
-        let x : u32 = future::pending().await;
+        tokio::time::sleep(Duration::from_millis(1000)).await;
         // let test_future = Box::pin(self.testing_interface.recv());
         // TODO: change this
         // let closure = self.testing_interface.recv().await.unwrap();

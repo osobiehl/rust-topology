@@ -5,8 +5,9 @@ use crate::{
     async_communication::AsyncChannel,
     internal_bus,
     sysmodules::{com::*, common::*},
-    utils::spawn_sysmodule,
+    utils::spawn_test_sysmodule,
 };
+use futures::future::select_all;
 use internal_bus::InternalBus;
 use std::net::Ipv4Addr;
 use crate::net::device::{NetifPair, setup_if, AsyncGatewayDevice};
@@ -67,15 +68,14 @@ impl P4Basic {
     /// starts a P4 simulation
     pub async fn start(mut self) {
         
-        
-        let pv = spawn_sysmodule(self.pv.0 .0);
-        let hmi = spawn_sysmodule(self.hmi.0 .0);
+        let pv = spawn_test_sysmodule(self.pv.0 .0);
+        let hmi = spawn_test_sysmodule(self.hmi.0 .0);
         let mut futures = vec![pv, hmi];
         if let Some(c ) = self.com{
-            futures.push(spawn_sysmodule(c.0));
+            futures.push(spawn_test_sysmodule(c.0));
         }
         if let Some(c) = self.pi{
-            futures.push(spawn_sysmodule(c.0.base));
+            futures.push(spawn_test_sysmodule(c.0.base));
         }
 
         let bus = tokio::spawn(async move {
@@ -83,10 +83,8 @@ impl P4Basic {
                 self.bus.run_once().await;
             }
         });
-        for i in futures {
-            _ = i.await.expect("handle panicked!");
-        }
-        let _ = bus.await;
+        let (event, index, remaining) = select_all(futures).await;
+
 
     }
 }

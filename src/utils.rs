@@ -50,12 +50,12 @@ pub fn new_module(netifs: Vec<NetifPair<TestDevice>>)->(BasicModule, TestingSend
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
-pub fn spawn_sysmodule<M: SysModuleStartup + Send + 'static>(mut module: M) -> JoinHandle<()> {
+pub fn spawn_test_sysmodule<M: SysModuleStartup + Send + 'static>(mut module: M) -> JoinHandle<()> {
     let h = tokio::spawn(async move {
         module.on_start().await;
-        loop {
-            module.run_once().await;
-        }
+
+        module.run_once().await;
+        
     });
     return h;
 }

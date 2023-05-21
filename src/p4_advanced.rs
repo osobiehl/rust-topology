@@ -3,8 +3,9 @@ use crate::{
     async_communication::{AsyncChannel, AsyncGateway},
     internal_bus,
     sysmodules::{com::*, common::*},
-    utils::{spawn_sysmodule, new_module, new_netif, new_internal_module}, net::device::{setup_if, AsyncGatewayDevice},
+    utils::{spawn_test_sysmodule, new_module, new_netif, new_internal_module}, net::device::{setup_if, AsyncGatewayDevice},
 };
+use futures::future::select_all;
 use internal_bus::InternalBus;
 use smoltcp::wire::IpCidr;
 use std::net::Ipv4Addr;
@@ -68,23 +69,23 @@ impl P4Advanced {
         let mut futures = vec![];
 
         if let Some((com, _)) = self.adv_to_basic {
-            futures.push(spawn_sysmodule(com))
+            futures.push(spawn_test_sysmodule(com))
         }
         if let Some((com, _)) = self.hub_to_adv {
-            futures.push(spawn_sysmodule(com));
+            futures.push(spawn_test_sysmodule(com));
         }
         if let Some((pv, _)) = self.pv {
-            futures.push(spawn_sysmodule(pv.0));
+            futures.push(spawn_test_sysmodule(pv.0));
         }
-        futures.push(spawn_sysmodule(self.hmi.0 .0));
+        futures.push(spawn_test_sysmodule(self.hmi.0 .0));
 
         futures.push(tokio::spawn(async move {
-            loop {
+
                 self.bus.run_once().await;
-            }
+
         }));
-        for i in futures {
-            _ = i.await;
-        }
+        //return on first end
+        let (event, index, remaining) = select_all(futures).await;
+       
     }
 }

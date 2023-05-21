@@ -249,7 +249,7 @@ impl Com {
 #[async_trait::async_trait]
 impl SysModuleStartup for Com {
     async fn run_once(&mut self) {
-        let _: usize = future::pending().await;
+        tokio::time::sleep(Duration::from_millis(1000)).await;
     }
     async fn on_start(&mut self) {
         println!("starting!!");
