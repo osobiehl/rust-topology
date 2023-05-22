@@ -72,7 +72,8 @@ use crate::p4_basic::P4Basic;
 
 pub use super::*;
 
-pub use net::udp_state::UDPState;
+pub use net::udp_state::NetworkCore;
+use smoltcp::iface::Route;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address, Ipv6Address};
 use smoltcp::socket::{tcp, udp};
 use std::sync::Arc;
@@ -95,12 +96,12 @@ async fn test_netif_setup(){
 
     let stack2 = setup_if(ip_2, Box::new(dev2));
 
-    let mut udp_1 = UDPState::new(vec![stack1]);
-    let mut udp_2 = UDPState::new(vec![stack2]);
+    let mut udp_1 = NetworkCore::new(vec![stack1]);
+    let mut udp_2 = NetworkCore::new(vec![stack2]);
 
 
-    let handle_send = udp_1.new_socket(6969);
-    let handle_receive = udp_2.new_socket(6969);
+    let handle_send = udp_1.new_udp_socket(6969);
+    let handle_receive = udp_2.new_udp_socket(6969);
     let hello = "hello_world!";
     {   
         let _ = udp_1.poll();
@@ -127,7 +128,7 @@ async fn test_netif_setup(){
     
 }
 
-use net::udp_state::{AsyncUDPSocket, UDPSocketRead};
+use net::udp_state::{AsyncSocket, SocketRead};
 #[tokio::test(flavor = "multi_thread")]
 async fn test_async_netif(){
     let (mut dev1, mut dev2 ) = AsyncGateway::<Vec<u8>>::new();
@@ -143,11 +144,11 @@ async fn test_async_netif(){
     let stack2 = setup_if(ip_2, Box::new(AsyncGatewayDevice::new(dev2)));
 
 
-    let mut udp_1 = Arc::new(Mutex::new(UDPState::new(vec![stack1]) ) );
-    let mut udp_2 = Arc::new(Mutex::new(UDPState::new(vec![stack2])));
+    let mut udp_1 = Arc::new(Mutex::new(NetworkCore::new(vec![stack1]) ) );
+    let mut udp_2 = Arc::new(Mutex::new(NetworkCore::new(vec![stack2])));
 
-    let mut socket1 = AsyncUDPSocket::new(6969, udp_1.clone()).await;
-    let mut socket2 = AsyncUDPSocket::new(6969, udp_2.clone()).await;
+    let mut socket1 = AsyncSocket::new(6969, udp_1.clone()).await;
+    let mut socket2 = AsyncSocket::new(6969, udp_2.clone()).await;
     let hello = "hello_world!";
     socket1.send(Vec::from(hello.as_bytes()), smoltcp::wire::IpEndpoint { addr: IpAddress::v4(192, 168, 69, 2), port: 6969 }).await;
 
@@ -173,12 +174,12 @@ async fn test_concurrent_wait(){
     let stack2 = setup_if(ip_2, Box::new(AsyncGatewayDevice::new(dev2)));
 
 
-    let mut udp_1 = Arc::new(Mutex::new(UDPState::new(vec![stack1]) ) );
-    let mut udp_2 = Arc::new(Mutex::new(UDPState::new(vec![stack2])));
+    let mut udp_1 = Arc::new(Mutex::new(NetworkCore::new(vec![stack1]) ) );
+    let mut udp_2 = Arc::new(Mutex::new(NetworkCore::new(vec![stack2])));
 
-    let mut socket1 = AsyncUDPSocket::new(6969, udp_1.clone()).await;
-    let mut socket2 = AsyncUDPSocket::new(6969, udp_2.clone()).await;
-    let mut socket_dummy = AsyncUDPSocket::new(6968, udp_2.clone()).await;
+    let mut socket1 = AsyncSocket::new(6969, udp_1.clone()).await;
+    let mut socket2 = AsyncSocket::new(6969, udp_2.clone()).await;
+    let mut socket_dummy = AsyncSocket::new(6968, udp_2.clone()).await;
 
     let hello = "hello_world!";
     socket1.send(Vec::from(hello.as_bytes()), smoltcp::wire::IpEndpoint { addr: IpAddress::v4(192, 168, 69, 2), port: 6969 }).await;
@@ -210,12 +211,12 @@ async fn test_second_netif_ingress(){
     let stack1 = setup_if(ip_1, Box::new( AsyncGatewayDevice::new(dev1)));
     let stack2 = setup_if(ip_2, Box::new(AsyncGatewayDevice::new(dev2)));
 
-    let mut udp_1 = Arc::new(Mutex::new(UDPState::new(vec![stack1, stack2]) ) );
+    let mut udp_1 = Arc::new(Mutex::new(NetworkCore::new(vec![stack1, stack2]) ) );
 
 
     let hello = "hello_world!";
-    let mut socket1 = AsyncUDPSocket::new(6969, udp_1.clone()).await;
-    let mut socket2 = AsyncUDPSocket::new(smoltcp::wire::IpEndpoint { addr: IpAddress::v4(192, 169, 0, 1), port: 6968 }, udp_1.clone()).await;
+    let mut socket1 = AsyncSocket::new(6969, udp_1.clone()).await;
+    let mut socket2 = AsyncSocket::new(smoltcp::wire::IpEndpoint { addr: IpAddress::v4(192, 169, 0, 1), port: 6968 }, udp_1.clone()).await;
 
     socket1.send(Vec::from(hello.as_bytes()), smoltcp::wire::IpEndpoint { addr: IpAddress::v4(192, 169, 0, 1), port: 6968 }).await;
     let r = stub2.try_receive().expect("stub should have received data");
@@ -242,12 +243,12 @@ async fn test_broadcast_ability(){
     let stack1 = setup_if(ip_1, Box::new(dev1));
     let stack2 = setup_if(ip_2, Box::new(dev2));
 
-    let mut udp_1 = Arc::new(Mutex::new(UDPState::new(vec![stack1, stack2]) ) );
+    let mut udp_1 = Arc::new(Mutex::new(NetworkCore::new(vec![stack1, stack2]) ) );
 
 
     let hello = "hello_world!";
-    let mut socket1 = AsyncUDPSocket::new(6969, udp_1.clone()).await;
-    let mut socket2 = AsyncUDPSocket::new(smoltcp::wire::IpEndpoint { addr: IpAddress::v4(192, 169, 0, 1), port: 6968 }, udp_1.clone()).await;
+    let mut socket1 = AsyncSocket::new(6969, udp_1.clone()).await;
+    let mut socket2 = AsyncSocket::new(smoltcp::wire::IpEndpoint { addr: IpAddress::v4(192, 169, 0, 1), port: 6968 }, udp_1.clone()).await;
 
     socket1.send(Vec::from(hello.as_bytes()), smoltcp::wire::IpEndpoint { addr: IpAddress::v4(255, 255, 255, 255), port: 6968 }).await;
 
@@ -273,17 +274,17 @@ async fn test_two_netif_response(){
     let stack1 = setup_if(ip_1, Box::new(dev1));
     let stack2 = setup_if(ip_2, Box::new(dev2));
 
-    let mut udp_1 = Arc::new(Mutex::new(UDPState::new(vec![stack1, stack2]) ) );
+    let mut udp_1 = Arc::new(Mutex::new(NetworkCore::new(vec![stack1, stack2]) ) );
 
 
     let hello = "hello_world!";
-    let mut socket1 = AsyncUDPSocket::new(6969, udp_1.clone()).await;
+    let mut socket1 = AsyncSocket::new(6969, udp_1.clone()).await;
 
     socket1.send(Vec::from(hello.as_bytes()), smoltcp::wire::IpEndpoint { addr: IpAddress::v4(192, 168, 69, 2), port: 6969 }).await;
     assert! (test_netif_1.try_receive().is_some());
     assert!( test_netif_2.try_receive().is_none());
 
-    let mut socket2 = AsyncUDPSocket::new(smoltcp::wire::IpEndpoint { addr: IpAddress::v4(192, 169, 0, 1), port: 6968 }, udp_1.clone()).await;
+    let mut socket2 = AsyncSocket::new(smoltcp::wire::IpEndpoint { addr: IpAddress::v4(192, 169, 0, 1), port: 6968 }, udp_1.clone()).await;
 
     socket2.send(Vec::from(hello.as_bytes()), smoltcp::wire::IpEndpoint { addr: IpAddress::v4(192, 169, 0, 2), port: 6962 }).await;
 
@@ -318,23 +319,23 @@ async fn test_internal_bus_communication(){
     let stack3 = setup_if(ip_3, Box::new(dev3));
 
 
-    let mut udp_1: Arc<Mutex<UDPState<TestDevice>>> = Arc::new(Mutex::new(UDPState::new(vec![stack1]) ) );
-    let mut udp_2: Arc<Mutex<UDPState<TestDevice>>> = Arc::new(Mutex::new(UDPState::new(vec![stack2]) ) );
-    let mut udp_3: Arc<Mutex<UDPState<TestDevice>>> = Arc::new(Mutex::new(UDPState::new(vec![stack3]) ) );
+    let mut udp_1: Arc<Mutex<NetworkCore<TestDevice>>> = Arc::new(Mutex::new(NetworkCore::new(vec![stack1]) ) );
+    let mut udp_2: Arc<Mutex<NetworkCore<TestDevice>>> = Arc::new(Mutex::new(NetworkCore::new(vec![stack2]) ) );
+    let mut udp_3: Arc<Mutex<NetworkCore<TestDevice>>> = Arc::new(Mutex::new(NetworkCore::new(vec![stack3]) ) );
 
     let a = tokio::spawn(async move {
         loop{ib.run_once().await}
     });
 
     let  task_2  =tokio::spawn(async move {
-        let mut socket2 = AsyncUDPSocket::new( 6969, udp_2.clone()).await;
+        let mut socket2 = AsyncSocket::new( 6969, udp_2.clone()).await;
         let a = socket2.receive_with_timeout(std::time::Duration::from_millis(500)).await.expect("did not receive in time");
         let a =socket2.receive_with_timeout(std::time::Duration::from_millis(500)).await.expect("did not receive in time");
     });
 
     let task_1 = tokio::spawn(async move {
         let hello = "hello_world!";
-        let mut socket1 = AsyncUDPSocket::new(6969, udp_1.clone()).await;
+        let mut socket1 = AsyncSocket::new(6969, udp_1.clone()).await;
         socket1.send(Vec::from(hello.as_bytes()), smoltcp::wire::IpEndpoint { addr: addr_2, port: 6969 }).await;
         task_2.await.expect("panic occured in read task!");
 
@@ -342,7 +343,7 @@ async fn test_internal_bus_communication(){
 
     let task_3 = tokio::spawn(async move {
         let hello = "hello_world!";
-        let mut socket1 = AsyncUDPSocket::new(6969, udp_3.clone()).await;
+        let mut socket1 = AsyncSocket::new(6969, udp_3.clone()).await;
         socket1.send(Vec::from(hello.as_bytes()), smoltcp::wire::IpEndpoint { addr: addr_2, port: 6969 }).await;
         task_1.await.expect("panic occured in first send task!");
     });
@@ -356,7 +357,6 @@ async fn test_internal_bus_communication(){
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_advanced_basic() {
-        simple_logger::init_with_level(log::Level::Trace);
 
     let (adv, bas) = AsyncGateway::<Vec<u8>>::new();
 
@@ -373,31 +373,90 @@ async fn test_advanced_basic() {
     let a = end_adv.await;
     end.await;
 
-    
-    // let dead = DeadExternalBus {};
-    // let advanced = P4Advanced::new(Some(Box::new(dead)), Some(Box::new(adv)));
-    // let com_send = basic.com.1.clone();
-
-    // let end_adv = tokio::spawn(async move {
-    //     advanced.start().await;
-    // });
-    // let end = tokio::spawn(async move {
-    //     basic.start().await;
-    // });
-    // let mut f = async move |sys: &mut dyn SysModule| {sys.send("hello".as_bytes().to_vec())};
-    // let func: SysmoduleRPC = Box::new( move |sys: &mut dyn SysModule|
-    // {
-    //     return async
-    //     {
-    //         sys.send( "hello from com".as_bytes().to_vec());
-
-    //     }.boxed()
-    // });
-    // tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    // com_send.send(
-    // func);
-    // end_adv.await;
-    // end.await;
 }
+
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_routing(){
+    simple_logger::init_with_level(log::Level::Trace);
+
+    let ( dev1to2, dev2to1 ) = AsyncGateway::<Vec<u8>>::new_async_device();
+    let ( dev2to3, dev3to2 ) = AsyncGateway::<Vec<u8>>::new_async_device();
+
+
+
+
+    let addr_1 = IpAddress::v4(192, 168, 69, 1);
+    let addr_1_to_2 = IpAddress::v4(192, 168, 69, 2);
+
+    let addr_2_to_3 = IpAddress::v4(193, 168, 69, 2);
+    let addr_3 = IpAddress::v4(193, 168, 69, 1);
+
+    let ip_1 = IpCidr::new(addr_1.clone(), 24);
+    let ip1_to_2 = IpCidr::new(addr_1_to_2.clone(), 24);
+
+    let ip_2_to_3: IpCidr = IpCidr::new(addr_2_to_3.clone(), 24);
+
+    let ip_3 = IpCidr::new(addr_3.clone(), 24);
+
+    let mut stack1 = setup_if(ip_1, Box::new(dev1to2));
+    
+    let mut stack2to1 = setup_if(ip1_to_2, Box::new(dev2to1));
+    stack2to1.iface.set_any_ip(true);
+    let route = Route{
+        cidr: IpCidr::new(  addr_1_to_2.clone(), 24 ),
+        expires_at: None,
+        preferred_until: None,
+        via_router:  Ipv4Address::UNSPECIFIED.into() };
+
+
+
+    stack2to1.iface.routes_mut().update(|routes| routes.push(route).unwrap());
+
+
+
+    let mut stack2to3 = setup_if(ip_2_to_3, Box::new(dev2to3));
+    stack2to3.iface.set_any_ip(true);
+    let route = Route{
+        cidr: IpCidr::new(  addr_2_to_3.clone(), 24 ),
+        expires_at: None,
+        preferred_until: None,
+        via_router:  Ipv4Address::UNSPECIFIED.into() };
+
+
+
+    stack2to3.iface.routes_mut().update(|routes| routes.push(route).unwrap());
+        
+    let stack3 = setup_if(ip_3, Box::new(dev3to2));
+
+    let mut udp_1: Arc<Mutex<NetworkCore<TestDevice>>> = Arc::new(Mutex::new(NetworkCore::new(vec![stack1]) ) );
+    let mut udp_2: Arc<Mutex<NetworkCore<TestDevice>>> = Arc::new(Mutex::new(NetworkCore::new(vec![stack2to1, stack2to3]) ) );
+    let mut udp_3: Arc<Mutex<NetworkCore<TestDevice>>> = Arc::new(Mutex::new(NetworkCore::new(vec![stack3]) ) );
+    
+    let  task_2  =tokio::spawn(async move {
+        let mut socket2 = AsyncSocket::new( 6969, udp_1.clone()).await;
+        let a = socket2.receive_with_timeout(std::time::Duration::from_millis(1000)).await.expect("did not receive in time");
+    });
+
+    let task_1 = tokio::spawn(async move {
+        let hello = "hello_world!";
+        let mut socket1 = AsyncSocket::new(6969, udp_3.clone()).await;
+        socket1.send(Vec::from(hello.as_bytes()), smoltcp::wire::IpEndpoint { addr: addr_1.clone(), port: 6969 }).await;
+        task_2.await.expect("panic occured in read task!");
+
+    });
+
+    let task_wait = tokio::spawn(async move {
+        let mut socket1 = AsyncSocket::new(6969, udp_2.clone()).await;
+        
+        loop { let _ = socket1.receive_with_timeout(std::time::Duration::from_millis(10)).await;}
+
+    });
+
+    
+    task_1.await;
+        
+}
+
 
 }

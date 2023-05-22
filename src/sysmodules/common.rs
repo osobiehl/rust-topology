@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::mpsc::UnboundedSender;
-use crate::net::udp_state::{AsyncUDPSocket, NetStack, UDPState};
+use crate::net::udp_state::{AsyncSocket, NetStack, NetworkCore};
 use smoltcp::wire::{EthernetAddress, IpAddress, Ipv4Address, Ipv6Address};
 
 pub const TRANSIENT_HMI_ID: IpAddress = IpAddress::v4(192, 168, 69, 1);
@@ -31,14 +31,14 @@ pub type TestingSender = UnboundedSender<SysmoduleRPC>;
 pub type Device = AsyncGatewayDevice<AsyncGateway<Vec<u8>>>;
 pub struct BasicModule {
     pub(super) testing_interface: TestingReceiver,
-    netif: Arc<Mutex<UDPState<Device>>>
+    netif: Arc<Mutex<NetworkCore<Device>>>
 }
 #[async_trait::async_trait]
 impl NetStack<Device> for BasicModule{
-    async fn socket<T:Into<IpListenEndpoint> + Send> (&self, endpoint: T) -> AsyncUDPSocket<Device>{
-        AsyncUDPSocket::new(endpoint,self.netif.clone()).await
+    async fn udp_socket<T:Into<IpListenEndpoint> + Send> (&self, endpoint: T) -> AsyncSocket<Device>{
+        AsyncSocket::new(endpoint,self.netif.clone()).await
     }
-    async fn modify_netif<F>(&self, f: F) where F: FnOnce( & mut UDPState< Device>) + Send {
+    async fn modify_netif<F>(&self, f: F) where F: FnOnce( & mut NetworkCore< Device>) + Send {
         let mut netif = self.netif.lock().await;
         f( &mut *netif);
     }
@@ -46,7 +46,7 @@ impl NetStack<Device> for BasicModule{
 
 impl BasicModule {
     pub fn new(
-        netif: Arc<Mutex<UDPState<Device>>>,
+        netif: Arc<Mutex<NetworkCore<Device>>>,
         testing_interface: TestingReceiver,
     ) -> Self {
         Self {
@@ -75,7 +75,7 @@ pub trait SysModuleStartup {
 #[async_trait]
 impl SysModuleStartup for BasicModule {
     async fn on_start(&mut self) {
-        let mut socket_internal_bus = self.socket(ADDRESS_ASSIGNMENT_PORT).await;
+        let mut socket_internal_bus = self.udp_socket(ADDRESS_ASSIGNMENT_PORT).await;
         let (val,req) = socket_internal_bus.receive_with_timeout(Duration::from_millis(1000)).await.expect("module did not receive message on startup");
         assert!(val.len() == 4, "non-ipv4 message received!");
         let new_ip: Ipv4Address = Ipv4Address::new(val[0], val[1], val[2], val[3]);

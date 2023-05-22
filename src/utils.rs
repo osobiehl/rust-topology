@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::async_communication::AsyncGateway;
 use crate::TestDevice;
 use crate::net::device::{NetifPair, setup_if, AsyncGatewayDevice};
-use crate::net::udp_state::UDPState;
+use crate::net::udp_state::NetworkCore;
 use crate::{
     internal_bus,
     sysmodules::{common::*},
@@ -38,7 +38,7 @@ pub fn new_internal_module(
 }
 
 pub fn new_module(netifs: Vec<NetifPair<TestDevice>>)->(BasicModule, TestingSender){
-    let mut udp_1: Arc<Mutex<UDPState<TestDevice>>> = Arc::new(Mutex::new(UDPState::new(netifs) ) );
+    let mut udp_1: Arc<Mutex<NetworkCore<TestDevice>>> = Arc::new(Mutex::new(NetworkCore::new(netifs) ) );
     let (mod_test_tx, mod_test_rx) = tokio::sync::mpsc::unbounded_channel();
     let module = BasicModule::new(udp_1, mod_test_rx );
     return (module, mod_test_tx)
