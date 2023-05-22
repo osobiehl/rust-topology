@@ -8,6 +8,7 @@ use smoltcp::iface::{SocketHandle, SocketSet};
 use smoltcp::socket::{raw, udp, AnySocket};
 use smoltcp::time::Instant;
 use smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint, IpProtocol};
+use std::marker::PhantomData;
 use std::sync::Arc;
 use std::task::Poll;
 use std::time::Duration;
@@ -22,21 +23,22 @@ pub trait NetStack<D: AsyncDevice> {
     where
         F: FnOnce(&mut UDPState<D>) + Send;
 }
-
-pub trait AsyncSocket<'a> {
+use tokio::time::{timeout as tokio_timeout, Timeout};
+pub trait AsyncSocket<'a> where Self: 'a{
     type Output;
     type InputSocket: AnySocket<'a>;
     fn register_receive_waker(&mut self, waker: & std::task::Waker);
     fn receive(&mut self) -> Result<Self::Output, ()>;
-    fn from_socket(sock: &'a mut Self::InputSocket) -> Self where Self: 'a;
-    fn handle() -> SocketHandle;
+    fn from_socket(sock: &'a mut Self::InputSocket) -> Self;
+    fn is_open(&self)->bool;
 }
 
 pub struct AsyncUDP<'a>(pub &'a mut udp::Socket<'a>);
 pub struct AsyncRaw<'a>(pub &'a mut raw::Socket<'a>);
+pub type UdpOutput = (Vec<u8>, IpEndpoint);
 
 impl<'a> AsyncSocket<'a> for AsyncUDP<'a> {
-    type Output = (Vec<u8>, IpEndpoint);
+    type Output = UdpOutput;
     type InputSocket = udp::Socket<'a>;
     fn receive(&mut self) -> Result<Self::Output, ()> {
         self.0
@@ -50,9 +52,10 @@ impl<'a> AsyncSocket<'a> for AsyncUDP<'a> {
     fn from_socket(sock: &'a mut Self::InputSocket) -> Self where Self: 'a{
         Self(sock)
     }
-    fn handle() -> SocketHandle {
-        
+    fn is_open(&self)->bool {
+        self.0.is_open()
     }
+
 }
 
 impl<'a> AsyncSocket<'a> for AsyncRaw<'a> {
@@ -67,8 +70,11 @@ impl<'a> AsyncSocket<'a> for AsyncRaw<'a> {
     fn register_receive_waker(&mut self, waker: & std::task::Waker) {
         self.0.register_recv_waker(waker);
     }
-    fn from_socket(sock: &mut Self::InputSocket)->Self where Self: 'a{
+    fn from_socket(sock: &'a mut Self::InputSocket)->Self{
         Self(sock)
+    }
+    fn is_open(&self)->bool {
+        true
     }
 }
 
@@ -92,11 +98,11 @@ impl<D: AsyncDevice + AsyncChannel<Vec<u8>>> AsyncUDPSocket<D> {
         };
     }
 
-    pub fn recv<'b>(&'b mut self) -> UDPSocketRead<'b, D> {
-        return UDPSocketRead(self);
+    pub fn recv<'b>(&'b mut self) -> AsyncSocketRead<'b, D, AsyncUDP> {
+        return AsyncSocketRead {handle: self.handle,  socket: Default::default(), state: self.state.clone()}
     }
 
-    pub async fn receive_with_timeout(&mut self, timeout: Duration) -> UdpResult {
+    pub async fn receive_with_timeout(&mut self, timeout: Duration) -> Result<UdpOutput, ()> {
         let ans: Result<(Vec<u8>, IpEndpoint), ()> = futures::select! {
             x = self.recv().fuse() => x,
             _ = tokio::time::sleep(timeout).fuse() => Err(())
@@ -115,7 +121,7 @@ impl<D: AsyncDevice + AsyncChannel<Vec<u8>>> AsyncUDPSocket<D> {
 }
 
 // todo: phantomdata for type, just use socket
-pub struct AsyncSocketRead<'b, D: AsyncDevice, SockType: AsyncSocket<'b>>(pub(crate) &'b mut SockType, pub(crate) Arc<Mutex<UDPState<D>>> );
+pub struct AsyncSocketRead<'b, D: AsyncDevice, SockType: AsyncSocket<'b>>{ pub(crate) handle: SocketHandle,  pub(crate) state: Arc<Mutex<UDPState<D>>>, socket: PhantomData<&'b SockType>, }
 
 pub struct UDPSocketRead<'b, D: AsyncDevice>(pub(crate) &'b mut AsyncUDPSocket<D>);
 
@@ -131,7 +137,7 @@ SockType: AsyncSocket<'b> {
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Self::Output> {
         // get state mutex
-        let fut = self.1.lock();
+        let fut = self.state.lock();
         pin_mut!(fut);
         let Poll::Ready(mut state) = fut.poll(cx) else {
             return Poll::Pending;
@@ -145,15 +151,16 @@ SockType: AsyncSocket<'b> {
             }
         }
         state.poll();
-        let socket = state.sockets.get_mut::<SockType::InputSocket>(self.0.handle.clone());
+        let handle = self.handle.clone();
+        let mut socket = SockType::from_socket( state.sockets.get_mut::<SockType::InputSocket>(handle));
         if !socket.is_open() {
             println!("err: socket not open");
             return Poll::Ready(Err(()));
         }
-        if let Ok((bytes, endpoint)) = socket.recv() {
-            return Poll::Ready(Ok((Vec::from(bytes), endpoint)));
+        if let Ok(out) = socket.receive() {
+            return Poll::Ready(Ok(out));
         } else {
-            socket.register_recv_waker(cx.waker());
+            socket.register_receive_waker(cx.waker());
         }
         return Poll::Pending;
     }
