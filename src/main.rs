@@ -127,7 +127,7 @@ async fn test_netif_setup(){
     
 }
 
-use net::udp_state::{AsyncUDPSocket, UDPSocketRead};
+use net::udp_state::{AsyncUDPSocket, AsyncSocketRead, UDP};
 #[tokio::test(flavor = "multi_thread")]
 async fn test_async_netif(){
     let (mut dev1, mut dev2 ) = AsyncGateway::<Vec<u8>>::new();

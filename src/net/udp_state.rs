@@ -24,61 +24,55 @@ pub trait NetStack<D: AsyncDevice> {
         F: FnOnce(&mut UDPState<D>) + Send;
 }
 use tokio::time::{timeout as tokio_timeout, Timeout};
-pub trait AsyncSocket<'a> where Self: 'a{
+pub trait AsyncSocket {
     type Output;
-    type InputSocket: AnySocket<'a>;
-    fn register_receive_waker(&mut self, waker: & std::task::Waker);
-    fn receive(&mut self) -> Result<Self::Output, ()>;
-    fn from_socket(sock: &'a mut Self::InputSocket) -> Self;
-    fn is_open(&self)->bool;
+    type InputSocket<'a>: AnySocket<'a>;
+    fn register_receive_waker<'a>(sock: &mut Self::InputSocket<'a>, waker: &std::task::Waker);
+    fn receive<'a>(sock: &mut Self::InputSocket<'a>) -> Result<Self::Output, ()>;
+    fn is_open<'a>(sock: &mut Self::InputSocket<'a>) -> bool;
 }
 
 pub struct AsyncUDP<'a>(pub &'a mut udp::Socket<'a>);
 pub struct AsyncRaw<'a>(pub &'a mut raw::Socket<'a>);
 pub type UdpOutput = (Vec<u8>, IpEndpoint);
 
-impl<'a> AsyncSocket<'a> for AsyncUDP<'a> {
+pub struct UDP {}
+pub struct Raw {}
+
+impl AsyncSocket for UDP {
     type Output = UdpOutput;
-    type InputSocket = udp::Socket<'a>;
-    fn receive(&mut self) -> Result<Self::Output, ()> {
-        self.0
-            .recv()
+    type InputSocket<'a> = udp::Socket<'a>;
+
+    fn receive<'a>(sock: &mut Self::InputSocket<'a>) -> Result<Self::Output, ()> {
+        sock.recv()
             .map(|(bytes, endpoint)| (Vec::<u8>::from(bytes), endpoint))
             .map_err(|_| ())
     }
-    fn register_receive_waker(&mut self, waker: & std::task::Waker) {
-        self.0.register_recv_waker(waker);
-    }
-    fn from_socket(sock: &'a mut Self::InputSocket) -> Self where Self: 'a{
-        Self(sock)
-    }
-    fn is_open(&self)->bool {
-        self.0.is_open()
+
+    fn register_receive_waker<'a>(sock: &mut Self::InputSocket<'a>, waker: &std::task::Waker) {
+        sock.register_recv_waker(waker);
     }
 
+    fn is_open<'a>(sock: &mut Self::InputSocket<'a>) -> bool {
+        sock.is_open()
+    }
 }
 
-impl<'a> AsyncSocket<'a> for AsyncRaw<'a> {
+impl AsyncSocket for Raw {
     type Output = Vec<u8>;
-    type InputSocket = raw::Socket<'a>;
-    fn receive(&mut self) -> Result<Self::Output, ()> {
-        self.0
-            .recv()
-            .map(Vec::from)
-            .map_err(|_| ())
+    type InputSocket<'a> = raw::Socket<'a>;
+    fn receive<'a>(sock: &mut Self::InputSocket<'a>) -> Result<Self::Output, ()> {
+        sock.recv().map(Vec::<u8>::from).map_err(|_| ())
     }
-    fn register_receive_waker(&mut self, waker: & std::task::Waker) {
-        self.0.register_recv_waker(waker);
+
+    fn register_receive_waker<'a>(sock: &mut Self::InputSocket<'a>, waker: &std::task::Waker) {
+        sock.register_recv_waker(waker);
     }
-    fn from_socket(sock: &'a mut Self::InputSocket)->Self{
-        Self(sock)
-    }
-    fn is_open(&self)->bool {
+
+    fn is_open<'a>(sock: &mut Self::InputSocket<'a>) -> bool {
         true
     }
 }
-
-
 
 pub struct AsyncUDPSocket<D: AsyncDevice> {
     handle: SocketHandle,
@@ -98,8 +92,12 @@ impl<D: AsyncDevice + AsyncChannel<Vec<u8>>> AsyncUDPSocket<D> {
         };
     }
 
-    pub fn recv<'b>(&'b mut self) -> AsyncSocketRead<'b, D, AsyncUDP> {
-        return AsyncSocketRead {handle: self.handle,  socket: Default::default(), state: self.state.clone()}
+    pub fn recv<'b, 'c>(&'b mut self) -> AsyncSocketRead<D, UDP> {
+        return AsyncSocketRead {
+            handle: self.handle,
+            socket: Default::default(),
+            state: self.state.clone(),
+        };
     }
 
     pub async fn receive_with_timeout(&mut self, timeout: Duration) -> Result<UdpOutput, ()> {
@@ -121,16 +119,20 @@ impl<D: AsyncDevice + AsyncChannel<Vec<u8>>> AsyncUDPSocket<D> {
 }
 
 // todo: phantomdata for type, just use socket
-pub struct AsyncSocketRead<'b, D: AsyncDevice, SockType: AsyncSocket<'b>>{ pub(crate) handle: SocketHandle,  pub(crate) state: Arc<Mutex<UDPState<D>>>, socket: PhantomData<&'b SockType>, }
-
-pub struct UDPSocketRead<'b, D: AsyncDevice>(pub(crate) &'b mut AsyncUDPSocket<D>);
+pub struct AsyncSocketRead<D: AsyncDevice, SockType: AsyncSocket> {
+    pub(crate) handle: SocketHandle,
+    pub(crate) state: Arc<Mutex<UDPState<D>>>,
+    socket: PhantomData<SockType>,
+}
 
 use crate::net::device::AsyncDevice;
 use futures::pin_mut;
 
-impl<'b, D , SockType > std::future::Future for AsyncSocketRead<'b, D , SockType> where 
-D: AsyncDevice,
-SockType: AsyncSocket<'b> {
+impl<D, SockType> std::future::Future for AsyncSocketRead<D, SockType>
+where
+    D: AsyncDevice,
+    SockType: AsyncSocket,
+{
     type Output = Result<SockType::Output, ()>;
     fn poll(
         self: std::pin::Pin<&mut Self>,
@@ -152,15 +154,17 @@ SockType: AsyncSocket<'b> {
         }
         state.poll();
         let handle = self.handle.clone();
-        let mut socket = SockType::from_socket( state.sockets.get_mut::<SockType::InputSocket>(handle));
-        if !socket.is_open() {
+        let socket = state
+            .sockets
+            .get_mut::<SockType::InputSocket<'static>>(handle);
+        if !SockType::is_open(socket) {
             println!("err: socket not open");
             return Poll::Ready(Err(()));
         }
-        if let Ok(out) = socket.receive() {
+        if let Ok(out) = SockType::receive(socket) {
             return Poll::Ready(Ok(out));
         } else {
-            socket.register_receive_waker(cx.waker());
+            SockType::register_receive_waker(socket, cx.waker());
         }
         return Poll::Pending;
     }
