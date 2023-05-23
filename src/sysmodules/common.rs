@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::mpsc::UnboundedSender;
-use crate::net::udp_state::{AsyncUDPSocket, NetStack, UDPState};
+use crate::net::udp_state::{AsyncSocketHandle, NetStack, UDPState, UDP, Raw};
 use smoltcp::wire::{EthernetAddress, IpAddress, Ipv4Address, Ipv6Address};
 
 pub const TRANSIENT_HMI_ID: IpAddress = IpAddress::v4(192, 168, 69, 1);
@@ -23,7 +23,7 @@ pub const TRANSIENT_PI_ID: IpAddress = IpAddress::v4(192, 168, 69, 3);
 pub const TRANSIENT_GATEWAY_ID: IpAddress = IpAddress::v4(192, 168, 69, 4);
 pub const ADDRESS_ASSIGNMENT_PORT: u16 = 6967;
 
-
+use crate::net::udp_state::AsyncSocket;
 
 pub type TestingReceiver= UnboundedReceiver<SysmoduleRPC>;
 pub type TestingSender = UnboundedSender<SysmoduleRPC>;
@@ -35,13 +35,19 @@ pub struct BasicModule {
 }
 #[async_trait::async_trait]
 impl NetStack<Device> for BasicModule{
-    async fn socket<T:Into<IpListenEndpoint> + Send> (&self, endpoint: T) -> AsyncUDPSocket<Device>{
-        AsyncUDPSocket::new(endpoint,self.netif.clone()).await
+    async fn socket<T:Into<IpListenEndpoint> + Send> (&self, endpoint: T) -> AsyncSocketHandle<Device, UDP>{
+        AsyncSocketHandle::<Device,UDP>::new_udp(endpoint,self.netif.clone()).await
     }
+    async fn raw_socket(&self) -> AsyncSocketHandle<Device, Raw>{
+        AsyncSocketHandle::<Device, Raw>::new_raw(self.netif.clone()).await
+    }
+
+
     async fn modify_netif<F>(&self, f: F) where F: FnOnce( & mut UDPState< Device>) + Send {
         let mut netif = self.netif.lock().await;
         f( &mut *netif);
     }
+
 }
 
 impl BasicModule {

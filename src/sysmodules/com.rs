@@ -1,12 +1,13 @@
 use std::time::Duration;
 
 use super::common::{BasicModule, SysModuleStartup, TRANSIENT_GATEWAY_ID};
-use crate::net::udp_state::NetStack;
+use crate::net::udp_state::{NetStack, UDP, IPEndpoint};
 use crate::sysmodule::ModuleNeighborInfo::{Advanced, Basic, Hub, NoNeighbor};
 use crate::sysmodule::{BasicTransmitter, HubIndex, ModuleNeighborInfo, determine_ip, Sysmodule, Transmitter};
 use crate::sysmodules::common::{TRANSIENT_PI_ID, TRANSIENT_PV_ID, TRANSIENT_HMI_ID, ADDRESS_ASSIGNMENT_PORT};
 use futures::future;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, IpEndpoint, Ipv4Address, Ipv6Address};
+use crate::net::udp_state::AsyncSocket;
 
 #[derive(Clone, Copy, Debug)]
 pub enum ComType {
@@ -84,16 +85,8 @@ impl Com {
     }
 
     async fn configure_upstream(&mut self) {
-        let mut parent_socket: crate::net::udp_state::AsyncUDPSocket<
-            crate::net::device::AsyncGatewayDevice<
-                crate::async_communication::AsyncGateway<Vec<u8>>,
-            >,
-        > = self.base.socket(EXTERNAL_BUS_TRANSIENT_PORT).await;
-        let mut child_socket: crate::net::udp_state::AsyncUDPSocket<
-            crate::net::device::AsyncGatewayDevice<
-                crate::async_communication::AsyncGateway<Vec<u8>>,
-            >,
-        > = self.base.socket(INTERNAL_BUS_TRANSIENT_COM_PORT).await;
+        let mut parent_socket  = self.base.socket(EXTERNAL_BUS_TRANSIENT_PORT).await;
+        let mut child_socket = self.base.socket(INTERNAL_BUS_TRANSIENT_COM_PORT).await;
 
         let parent_res: Result<(Vec<u8>, IpEndpoint), ()> =
             parent_socket.receive_with_timeout(WAIT_DEFAULT).await;
@@ -118,11 +111,12 @@ impl Com {
             (_, _) => panic!("unknown configuration!"),
         };
         println!("state of advanced: {:?}", &state);
+        let v: Vec<u8> = state.clone().into();
 
         parent_socket
             .send(
-                state.clone().into(),
-                IpEndpoint {
+                &v,
+                IPEndpoint {
                     addr: EXTERNAL_BUS_TRANSIENT_ADDRESS,
                     port: EXTERNAL_BUS_TRANSIENT_PORT,
                 },
@@ -130,8 +124,8 @@ impl Com {
             .await;
         child_socket
             .send(
-                state.clone().into(),
-                IpEndpoint {
+                &v,
+                IPEndpoint {
                     addr: TRANSIENT_GATEWAY_ID,
                     port: INTERNAL_BUS_TRANSIENT_COM_PORT,
                 },
@@ -169,11 +163,12 @@ impl Com {
     }
 
     async fn configure_downstream(&mut self) {
-        let mut socket_external_bus: crate::net::udp_state::AsyncUDPSocket<
+        let mut socket_external_bus: crate::net::udp_state::AsyncSocketHandle<
             crate::net::device::AsyncGatewayDevice<
                 crate::async_communication::AsyncGateway<Vec<u8>>,
+               
             >,
-        > = self.base.socket(EXTERNAL_BUS_TRANSIENT_PORT).await;
+            UDP> = self.base.socket(EXTERNAL_BUS_TRANSIENT_PORT).await;
         let mut socket_internal_bus = self.base.socket(INTERNAL_BUS_TRANSIENT_COM_PORT).await;
 
         let child = socket_external_bus.receive_with_timeout(WAIT_DEFAULT).await;
@@ -183,10 +178,11 @@ impl Com {
                 println!("warn: COM module with no child, todo deactivate")
             }
             Ok(_p) => {
+                let data: Vec<u8> = ModuleNeighborInfo::Basic.into();
                 socket_internal_bus
                     .send(
-                        ModuleNeighborInfo::Basic.into(),
-                        IpEndpoint {
+                        &data,
+                        IPEndpoint {
                             addr: TRANSIENT_GATEWAY_ID,
                             port: INTERNAL_BUS_TRANSIENT_COM_PORT,
                         },
@@ -202,8 +198,8 @@ impl Com {
                 println!("sending downstream info to child!");
                 socket_external_bus
                     .send(
-                        state.clone().into(),
-                        IpEndpoint {
+                        & state.clone().into_vec(),
+                        IPEndpoint {
                             addr: EXTERNAL_BUS_TRANSIENT_ADDRESS,
                             port: EXTERNAL_BUS_TRANSIENT_PORT,
                         },
@@ -234,15 +230,11 @@ impl Com {
 
     async fn configure_basic(&mut self) {
         println!("configuring basic...");
-        let mut socket_parent: crate::net::udp_state::AsyncUDPSocket<
-            crate::net::device::AsyncGatewayDevice<
-                crate::async_communication::AsyncGateway<Vec<u8>>,
-            >,
-        > = self.base.socket(EXTERNAL_BUS_TRANSIENT_PORT).await;
+        let mut socket_parent = self.base.socket(EXTERNAL_BUS_TRANSIENT_PORT).await;
         socket_parent
             .send(
-                ModuleNeighborInfo::Basic.into(),
-                IpEndpoint {
+                &ModuleNeighborInfo::Basic.into_vec(),
+                IPEndpoint {
                     addr: EXTERNAL_BUS_TRANSIENT_ADDRESS,
                     port: EXTERNAL_BUS_TRANSIENT_PORT,
                 },
@@ -275,7 +267,7 @@ impl Com {
             let new_ip = determine_ip(&module, &transmitter, &module_info);
             let mut s = self.base.socket( ADDRESS_ASSIGNMENT_PORT).await;
             
-            s.send(Vec::from(new_ip.0), IpEndpoint {addr, port: ADDRESS_ASSIGNMENT_PORT }).await;
+            s.send(&Vec::from(new_ip.0), IPEndpoint {addr, port: ADDRESS_ASSIGNMENT_PORT }).await;
             
         }
 

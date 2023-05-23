@@ -43,6 +43,12 @@ pub enum ModuleNeighborInfo {
     Advanced(Option<HubIndex>, Option<BasicTransmitter>), // advanced: can be root, middle component, or leaf
 }
 
+impl ModuleNeighborInfo{
+    pub fn into_vec(self)->Vec<u8>{
+        self.into()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub enum Sysmodule {
     COM = 1,

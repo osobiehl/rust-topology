@@ -18,18 +18,21 @@ use async_trait::async_trait;
 use std::future::Future;
 #[async_trait]
 pub trait NetStack<D: AsyncDevice> {
-    async fn socket<T: Into<IpListenEndpoint> + Send>(&self, endpoint: T) -> AsyncUDPSocket<D>;
+    async fn socket<T: Into<IpListenEndpoint> + Send>(&self, endpoint: T) -> AsyncSocketHandle<D, UDP>;
+    async fn raw_socket(&self) -> AsyncSocketHandle<D, Raw>;
     async fn modify_netif<F>(&self, f: F)
     where
         F: FnOnce(&mut UDPState<D>) + Send;
 }
 use tokio::time::{timeout as tokio_timeout, Timeout};
-pub trait AsyncSocket {
-    type Output;
+pub trait SocketAdapter {
+    type Output: Send ;
+    type Destination: Send + Into<IpAddress> + Clone;
     type InputSocket<'a>: AnySocket<'a>;
     fn register_receive_waker<'a>(sock: &mut Self::InputSocket<'a>, waker: &std::task::Waker);
     fn receive<'a>(sock: &mut Self::InputSocket<'a>) -> Result<Self::Output, ()>;
     fn is_open<'a>(sock: &mut Self::InputSocket<'a>) -> bool;
+    fn send<'a>(sock: &mut Self::InputSocket<'a>, data: &[u8], destination: Self::Destination);
 }
 
 pub struct AsyncUDP<'a>(pub &'a mut udp::Socket<'a>);
@@ -39,10 +42,21 @@ pub type UdpOutput = (Vec<u8>, IpEndpoint);
 pub struct UDP {}
 pub struct Raw {}
 
-impl AsyncSocket for UDP {
+#[derive(Clone, Copy, Debug)]
+pub struct IPEndpoint {
+    pub addr: IpAddress,
+    pub port: u16
+}
+impl Into<IpAddress> for IPEndpoint{
+    fn into(self) -> IpAddress {
+        return self.addr
+    }
+}
+
+impl SocketAdapter for UDP {
     type Output = UdpOutput;
     type InputSocket<'a> = udp::Socket<'a>;
-
+    type Destination = IPEndpoint;
     fn receive<'a>(sock: &mut Self::InputSocket<'a>) -> Result<Self::Output, ()> {
         sock.recv()
             .map(|(bytes, endpoint)| (Vec::<u8>::from(bytes), endpoint))
@@ -56,10 +70,14 @@ impl AsyncSocket for UDP {
     fn is_open<'a>(sock: &mut Self::InputSocket<'a>) -> bool {
         sock.is_open()
     }
+    fn send<'a>(sock: &mut Self::InputSocket<'a>, data: &[u8], destination: Self::Destination){
+        let _ = sock.send_slice(data, IpEndpoint{addr: destination.addr, port: destination.port});
+    }
 }
 
-impl AsyncSocket for Raw {
+impl SocketAdapter for Raw {
     type Output = Vec<u8>;
+    type Destination = IpAddress;
     type InputSocket<'a> = raw::Socket<'a>;
     fn receive<'a>(sock: &mut Self::InputSocket<'a>) -> Result<Self::Output, ()> {
         sock.recv().map(Vec::<u8>::from).map_err(|_| ())
@@ -69,57 +87,92 @@ impl AsyncSocket for Raw {
         sock.register_recv_waker(waker);
     }
 
-    fn is_open<'a>(sock: &mut Self::InputSocket<'a>) -> bool {
+    fn is_open<'a>(_sock: &mut Self::InputSocket<'a>) -> bool {
         true
     }
+    fn send<'a>(sock: &mut Self::InputSocket<'a>, data: &[u8], _destination: Self::Destination) {
+        
+
+        let _ = sock.send_slice(&data);
+    }
 }
 
-pub struct AsyncUDPSocket<D: AsyncDevice> {
+pub struct AsyncSocketHandle<D: AsyncDevice, SockType: SocketAdapter> {
     handle: SocketHandle,
     state: Arc<Mutex<UDPState<D>>>,
+    socket: PhantomData<SockType>
 }
-pub type UdpResponse = (Vec<u8>, smoltcp::wire::IpEndpoint);
-impl<D: AsyncDevice + AsyncChannel<Vec<u8>>> AsyncUDPSocket<D> {
-    pub async fn new<T: Into<IpListenEndpoint>>(
-        src_port: T,
-        state: Arc<Mutex<UDPState<D>>>,
-    ) -> AsyncUDPSocket<D> {
-        let state_2 = state.clone();
-        let mut s = state.lock().await;
-        return Self {
-            handle: s.new_socket(src_port),
-            state: state_2,
-        };
-    }
 
-    pub fn recv<'b, 'c>(&'b mut self) -> AsyncSocketRead<D, UDP> {
+pub type UDPSocket<D> = AsyncSocketHandle<D, UDP>;
+
+#[async_trait::async_trait]
+pub trait AsyncSocket<D, A> where 
+D: AsyncDevice + AsyncChannel<Vec<u8>>,
+A: SocketAdapter + Send {
+    fn recv(&mut self) -> AsyncSocketRead<D, A>;
+    async fn send(&mut self, data: &[u8], dest: A::Destination);
+    async fn receive_with_timeout(&mut self, timeout: Duration) -> Result<A::Output, ()>{
+        let ans: Result<A::Output, ()> = futures::select! {
+            x = self.recv().fuse() => x,
+            _ = tokio::time::sleep(timeout).fuse() => Err(())
+        };
+        return ans;
+    }
+}
+#[async_trait::async_trait]
+impl<D, A> AsyncSocket<D,A> for AsyncSocketHandle<D, A> where
+D: AsyncDevice,
+A: SocketAdapter + Send{
+    fn recv(&mut self) -> AsyncSocketRead<D, A>{
         return AsyncSocketRead {
             handle: self.handle,
             socket: Default::default(),
             state: self.state.clone(),
         };
     }
-
-    pub async fn receive_with_timeout(&mut self, timeout: Duration) -> Result<UdpOutput, ()> {
-        let ans: Result<(Vec<u8>, IpEndpoint), ()> = futures::select! {
-            x = self.recv().fuse() => x,
-            _ = tokio::time::sleep(timeout).fuse() => Err(())
-        };
-        return ans;
-    }
-
-    pub async fn send(&mut self, mut payload: Vec<u8>, endpoint: IpEndpoint) {
+    async fn send(&mut self, data: &[u8], dest: A::Destination){
         let mut state = self.state.lock().await;
-        let s = state.sockets.get_mut::<udp::Socket>(self.handle);
-        s.send_slice(&mut payload, endpoint)
-            .expect("could not send message!");
+        let s = state.sockets.get_mut::<A::InputSocket<'static> >(self.handle);
+        A::send(s, data, dest.clone());
         drop(s);
-        state.poll_for_send(&endpoint.addr);
+        state.poll_for_send(&dest.into());
     }
 }
 
+
+pub type UdpResponse = (Vec<u8>, smoltcp::wire::IpEndpoint);
+impl<D: AsyncDevice + AsyncChannel<Vec<u8>>> AsyncSocketHandle<D, UDP> {
+    pub async fn new_udp<T: Into<IpListenEndpoint>>(
+        src_port: T,
+        state: Arc<Mutex<UDPState<D>>>,
+    ) -> AsyncSocketHandle<D, UDP> {
+        let state_2 = state.clone();
+        let mut s = state.lock().await;
+        return Self {
+            handle: s.new_socket(src_port),
+            state: state_2,
+            socket: Default::default()
+        };
+    }
+}
+
+impl<D: AsyncDevice + AsyncChannel<Vec<u8>>> AsyncSocketHandle<D, Raw> {
+    pub async fn new_raw(
+        state: Arc<Mutex<UDPState<D>>>,
+    ) -> AsyncSocketHandle<D, Raw> {
+        let state_2 = state.clone();
+        let mut s = state.lock().await;
+        return Self {
+            handle: s.new_raw_socket(),
+            state: state_2,
+            socket: Default::default()
+        };
+    }
+}
+
+
 // todo: phantomdata for type, just use socket
-pub struct AsyncSocketRead<D: AsyncDevice, SockType: AsyncSocket> {
+pub struct AsyncSocketRead<D: AsyncDevice, SockType: SocketAdapter> {
     pub(crate) handle: SocketHandle,
     pub(crate) state: Arc<Mutex<UDPState<D>>>,
     socket: PhantomData<SockType>,
@@ -131,7 +184,7 @@ use futures::pin_mut;
 impl<D, SockType> std::future::Future for AsyncSocketRead<D, SockType>
 where
     D: AsyncDevice,
-    SockType: AsyncSocket,
+    SockType: SocketAdapter,
 {
     type Output = Result<SockType::Output, ()>;
     fn poll(
@@ -178,7 +231,6 @@ pub struct UDPState<D: AsyncDevice> {
     pub netifs: Vec<NetifPair<D>>,
 }
 
-pub struct RawSocketHandle(pub SocketHandle);
 
 impl<'a, D: AsyncDevice> UDPState<D> {
     pub fn new(netifs: Vec<NetifPair<D>>) -> Self {
@@ -189,7 +241,7 @@ impl<'a, D: AsyncDevice> UDPState<D> {
         }
     }
 
-    pub fn new_raw_socket(&mut self) -> RawSocketHandle {
+    pub fn new_raw_socket(&mut self) -> SocketHandle {
         let udp_rx_buffer1 = raw::PacketBuffer::new(
             vec![raw::PacketMetadata::EMPTY, raw::PacketMetadata::EMPTY],
             vec![0; 65535],
@@ -207,7 +259,7 @@ impl<'a, D: AsyncDevice> UDPState<D> {
 
         let raw_handle = self.sockets.add(raw_socket);
         self.handles.push(raw_handle.clone());
-        return RawSocketHandle(raw_handle);
+        return raw_handle
     }
 
     pub fn new_socket<T: Into<IpListenEndpoint>>(&mut self, endpoint: T) -> SocketHandle {
