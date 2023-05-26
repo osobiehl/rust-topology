@@ -5,10 +5,9 @@ use crate::TestDevice;
 use crate::net::device::{NetifPair, setup_if, AsyncGatewayDevice};
 use crate::net::udp_state::UDPState;
 use crate::{
-    internal_bus,
     sysmodules::{common::*},
 };
-use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address, Ipv6Address};
+use smoltcp::wire::{IpCidr};
 
 
 pub fn new_netif( addr: IpCidr ) -> (NetifPair<TestDevice>, AsyncGateway<Vec<u8>>){
@@ -38,7 +37,7 @@ pub fn new_internal_module(
 }
 
 pub fn new_module(netifs: Vec<NetifPair<TestDevice>>)->(BasicModule, TestingSender){
-    let mut udp_1: Arc<Mutex<UDPState<TestDevice>>> = Arc::new(Mutex::new(UDPState::new(netifs) ) );
+    let udp_1: Arc<Mutex<UDPState<TestDevice>>> = Arc::new(Mutex::new(UDPState::new(netifs) ) );
     let (mod_test_tx, mod_test_rx) = tokio::sync::mpsc::unbounded_channel();
     let module = BasicModule::new(udp_1, mod_test_rx );
     return (module, mod_test_tx)

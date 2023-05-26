@@ -6,10 +6,10 @@ use crate::sysmodule::ModuleNeighborInfo::{Advanced, Basic, Hub, NoNeighbor};
 use crate::sysmodule::{BasicTransmitter, HubIndex, ModuleNeighborInfo, determine_ip, Sysmodule, Transmitter};
 use crate::sysmodules::common::{TRANSIENT_PI_ID, TRANSIENT_PV_ID, TRANSIENT_HMI_ID, ADDRESS_ASSIGNMENT_PORT};
 use futures::future;
-use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, IpEndpoint, Ipv4Address, Ipv6Address};
+use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, IpEndpoint, Ipv4Address, Ipv6Address, Ipv4Cidr};
 use crate::net::udp_state::AsyncSocket;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ComType {
     HubCom(HubIndex),
     AdvUpstream,
@@ -60,7 +60,6 @@ impl ComType {
 pub struct Com {
     base: BasicModule,
     initial_configuration: ComType,
-    is_external_dead: bool,
 }
 const WAIT_DEFAULT: Duration = Duration::from_millis(5);
 impl Com {
@@ -68,7 +67,6 @@ impl Com {
         Self {
             base,
             initial_configuration,
-            is_external_dead: false,
         }
     }
 
@@ -272,11 +270,69 @@ impl Com {
         }
 
     }
+
+
+
+    async fn set_upstream_address(&mut self, cidr: IpCidr){
+        self.base.modify_netif(|state| {
+            let netif = &mut state.netifs[0].iface;
+            netif.set_any_ip(true);
+            netif.update_ip_addrs(|addrs| {addrs.clear(); addrs.push(cidr);});
+
+        }).await;
+    }
+
+    async fn set_downstream_mask(&mut self, cidr: IpCidr){
+        self.base.modify_netif(|state| {
+            let netif = &mut state.netifs[1].iface;
+            netif.set_any_ip(true);
+            netif.update_ip_addrs(|addrs| {addrs.clear(); addrs.push(cidr);});
+
+        }).await;
+    }
+
+    // async fn add_
+    async fn configure_basic_routing(&mut self, assigned_internal_bus_ip: Ipv4Address, info: ModuleNeighborInfo){
+        assert!(self.initial_configuration == ComType::Basic);
+        let (cidr1, cidr2) = match info{
+            
+            NoNeighbor => (Ipv4Cidr{address: assigned_internal_bus_ip.clone(), prefix_len: 24}, Ipv4Cidr{address: assigned_internal_bus_ip.clone(), prefix_len: 24}),
+            // if i have an advanced on top I must: route everything going to 192.x.x.x
+                // todo get address  from supposed parent
+            Advanced(None, _) => {Ipv4Cidr{address: assigned_internal_bus_ip.clone(), prefix_len: 24}, Ipv4Cidr{address: assigned_internal_bus_ip.clone(), prefix_len: 16}},
+
+        }
+
+
+    }
+
+    async fn configure_routing(&mut self, assigned_internal_bus_ip: Ipv4Address, module_info: ModuleNeighborInfo ) -> Result<(),()>{
+        match (self.initial_configuration, module_info){
+            (ComType::Basic, NoNeighbor) => println!("basic w/ no neighbor, no routing needed!"),
+            (ComType::Basic, Advanced(None, _)) => println!("basic w/ advanced, route needed!"),
+            (ComType::Basic, Advanced(Some(idx), _)) => println!("basic in full mode"),
+            (ComType::Basic, Hub(idx)) => println!("todo: basic with hub"),
+
+            (ComType::AdvDownstream, Advanced(_, None)) => println!("err: downstream com port expects a basic"),
+            (ComType::AdvDownstream, Advanced(None, Some(_))) =>  println!("TODO: 2-index routing"), // TODO 2-index routing
+            (ComType::AdvDownstream, Advanced(Some(idx), Some(_) ) ) => println!("TODO: Routing based on index and middle"),
+            
+            (ComType::HubCom(x), Advanced(_, None ) ) | (ComType::HubCom(x), Basic ) => println!("TODO: Routing for hub"),
+            (ComType::HubCom(x), Advanced(_, Some(_) ) ) => println!("TODO: full routing for hub"),
+            (_,_) => panic!("unknown configuration!")
+
+
+
+            
+        };
+        return Ok(());
+    }
 }
 
 #[async_trait::async_trait]
 impl SysModuleStartup for Com {
     async fn run_once(&mut self) {
+        println!("setting up routing:");
         tokio::time::sleep(Duration::from_millis(1000)).await;
     }
     async fn on_start(&mut self) {

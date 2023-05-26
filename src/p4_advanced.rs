@@ -1,14 +1,14 @@
 
 use crate::{
-    async_communication::{AsyncChannel, AsyncGateway},
+    async_communication::{AsyncGateway},
     internal_bus,
     sysmodules::{com::*, common::*},
     utils::{spawn_test_sysmodule, new_module, new_netif, new_internal_module}, net::device::{setup_if, AsyncGatewayDevice},
 };
-use futures::future::select_all;
+
 use internal_bus::InternalBus;
 use smoltcp::wire::IpCidr;
-use std::net::Ipv4Addr;
+
 
 // basic p4
 pub struct P4Advanced{
@@ -46,7 +46,7 @@ impl P4Advanced {
 
         }
         else {
-            let ( gateway_netif, ib_gateway) = new_netif(IpCidr::new(TRANSIENT_GATEWAY_ID, 24));
+            let ( gateway_netif, _ib_gateway) = new_netif(IpCidr::new(TRANSIENT_GATEWAY_ID, 24));
             let  (pv_, test) = new_module(vec![gateway_netif]);
             pv = Some((PV(pv_), test));
         }

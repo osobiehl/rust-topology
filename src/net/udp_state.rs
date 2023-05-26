@@ -24,7 +24,7 @@ pub trait NetStack<D: AsyncDevice> {
     where
         F: FnOnce(&mut UDPState<D>) + Send;
 }
-use tokio::time::{timeout as tokio_timeout, Timeout};
+
 pub trait SocketAdapter {
     type Output: Send ;
     type Destination: Send + Into<IpAddress> + Clone;
@@ -33,6 +33,8 @@ pub trait SocketAdapter {
     fn receive<'a>(sock: &mut Self::InputSocket<'a>) -> Result<Self::Output, ()>;
     fn is_open<'a>(sock: &mut Self::InputSocket<'a>) -> bool;
     fn send<'a>(sock: &mut Self::InputSocket<'a>, data: &[u8], destination: Self::Destination);
+    fn close<'a>(sock: &mut Self::InputSocket<'a>);
+
 }
 
 pub struct AsyncUDP<'a>(pub &'a mut udp::Socket<'a>);
@@ -73,6 +75,10 @@ impl SocketAdapter for UDP {
     fn send<'a>(sock: &mut Self::InputSocket<'a>, data: &[u8], destination: Self::Destination){
         let _ = sock.send_slice(data, IpEndpoint{addr: destination.addr, port: destination.port});
     }
+    fn close<'a>(sock: &mut Self::InputSocket<'a>){
+        sock.close();
+    }
+
 }
 
 impl SocketAdapter for Raw {
@@ -94,6 +100,9 @@ impl SocketAdapter for Raw {
         
 
         let _ = sock.send_slice(&data);
+    }
+    fn close<'a>(sock: &mut Self::InputSocket<'a>){
+        // raw sockets cannot be closed (?) 
     }
 }
 
@@ -178,6 +187,20 @@ pub struct AsyncSocketRead<D: AsyncDevice, SockType: SocketAdapter> {
     socket: PhantomData<SockType>,
 }
 
+impl<D: AsyncDevice, SockType: SocketAdapter> Drop for AsyncSocketHandle<D, SockType> {
+
+    fn drop(&mut self) {
+        let s = self.state.clone();
+        let handle = self.handle.clone();
+        tokio::task::block_in_place( move || {
+            let mut state = s.blocking_lock();
+            let sock = state.sockets.get_mut::<SockType::InputSocket<'static>>(handle);
+            SockType::close(sock);
+
+        });
+    }
+}
+
 use crate::net::device::AsyncDevice;
 use futures::pin_mut;
 
@@ -250,7 +273,7 @@ impl<'a, D: AsyncDevice> UDPState<D> {
             vec![raw::PacketMetadata::EMPTY, raw::PacketMetadata::EMPTY],
             vec![0; 65535],
         );
-        let mut raw_socket = raw::Socket::new(
+        let raw_socket = raw::Socket::new(
             smoltcp::wire::IpVersion::Ipv4,
             IpProtocol::Udp,
             udp_rx_buffer1,

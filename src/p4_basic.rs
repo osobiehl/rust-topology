@@ -1,18 +1,17 @@
 
 use crate::async_communication::AsyncGateway;
-use crate::utils::{new_internal_module, new_netif, external_bus_netif, new_module};
+use crate::utils::{new_internal_module, new_netif, new_module};
 use crate::{
-    async_communication::AsyncChannel,
     internal_bus,
     sysmodules::{com::*, common::*},
     utils::spawn_test_sysmodule,
 };
-use futures::future::select_all;
+
 use internal_bus::InternalBus;
-use std::net::Ipv4Addr;
-use crate::net::device::{NetifPair, setup_if, AsyncGatewayDevice};
-use smoltcp::wire::{Ipv4Cidr, IpCidr};
-use crate::sysmodules::common::{TRANSIENT_HMI_ID, TRANSIENT_PI_ID, TRANSIENT_PV_ID, TRANSIENT_GATEWAY_ID};
+
+use crate::net::device::{setup_if, AsyncGatewayDevice};
+use smoltcp::wire::{IpCidr};
+use crate::sysmodules::common::{TRANSIENT_HMI_ID, TRANSIENT_PV_ID, TRANSIENT_GATEWAY_ID};
 // basic p4
 pub struct P4Basic {
     pub pv: (PV, TestingSender),

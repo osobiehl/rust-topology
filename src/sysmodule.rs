@@ -1,7 +1,7 @@
-use smoltcp::wire::{IpAddress, Ipv4Address};
+use smoltcp::wire::{Ipv4Address};
 // class B subnet borrowing 4 bits ??
 use serde::{Deserialize, Serialize};
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub enum HubIndex {
     One = 0,
     Two = 1,
@@ -70,7 +70,7 @@ pub fn determine_ip(
 ) -> Ipv4Address {
     let sysmodule_octet = *sysmodule as u8;
     match (transmitter, neighbor_info) {
-        (Transmitter::Basic, ModuleNeighborInfo::Advanced(None, x)) => {
+        (Transmitter::Basic, ModuleNeighborInfo::Advanced(None, _x)) => {
             Ipv4Address::new(HubIndex::Two.to_ip_octet(), 168, 0, sysmodule_octet)
         }
         (Transmitter::Basic, ModuleNeighborInfo::Advanced(Some(idx), _)) => {
