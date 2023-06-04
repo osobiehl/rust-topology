@@ -9,6 +9,14 @@ use futures::future;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, IpEndpoint, Ipv4Address, Ipv6Address, Ipv4Cidr};
 use crate::net::udp_state::AsyncSocket;
 
+#[derive(Clone,Copy,Debug, PartialEq)]
+enum Direction{
+    Upstream,
+    Downstream,
+}
+
+
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ComType {
     HubCom(HubIndex),
@@ -292,16 +300,20 @@ impl Com {
     }
 
     // async fn add_
-    async fn configure_basic_routing(&mut self, assigned_internal_bus_ip: Ipv4Address, info: ModuleNeighborInfo){
+    async fn determine_direction(&mut self, recipient: Ipv4Address, info: ModuleNeighborInfo) -> Direction{
         assert!(self.initial_configuration == ComType::Basic);
-        let (cidr1, cidr2) = match info{
-            
-            NoNeighbor => (Ipv4Cidr{address: assigned_internal_bus_ip.clone(), prefix_len: 24}, Ipv4Cidr{address: assigned_internal_bus_ip.clone(), prefix_len: 24}),
-            // if i have an advanced on top I must: route everything going to 192.x.x.x
-                // todo get address  from supposed parent
-            Advanced(None, _) => {Ipv4Cidr{address: assigned_internal_bus_ip.clone(), prefix_len: 24}, Ipv4Cidr{address: assigned_internal_bus_ip.clone(), prefix_len: 16}},
 
-        }
+        
+
+        todo!();
+        // let (cidr1, cidr2) = match info{
+            
+        //     NoNeighbor => (Ipv4Cidr{address: assigned_internal_bus_ip.clone(), prefix_len: 24}, Ipv4Cidr{address: assigned_internal_bus_ip.clone(), prefix_len: 24}),
+        //     // if i have an advanced on top I must: route everything going to 192.x.x.x
+        //         // todo get address  from supposed parent
+        //     Advanced(None, _) => {Ipv4Cidr{address: assigned_internal_bus_ip.clone(), prefix_len: 24}, Ipv4Cidr{address: assigned_internal_bus_ip.clone(), prefix_len: 16}},
+
+        // }
 
 
     }

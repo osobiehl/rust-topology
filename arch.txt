@@ -7,6 +7,14 @@ w: NetworkIndex
 x: (reserved)
 y: Device idx
 z: sysmodule
+
+
+192.168.2.1 => sysmodule w/ id 1 on HUB module
+192.168.1.1 => sysmodule w/ id 1 on ADV module
+192.168.0.1 => sysmodule w/ id 1 on BAS module
+
+
+
 192.168.0.1
 193.168.0.1
 194.168.0.1

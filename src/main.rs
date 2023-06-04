@@ -469,17 +469,17 @@ mod test {
         let mut stack2_1: net::device::NetifPair<AsyncGatewayDevice<AsyncGateway<Vec<u8>>>> =
             setup_if(ip_1_2.clone(), Box::new(AsyncGatewayDevice::new(dev2to1)));
         stack2_1.iface.set_any_ip(true);
-        stack2_1
-            .iface
-            .routes_mut()
-            .add_default_ipv4_route(addr_1_2.clone()).expect("could not add route");
+        // stack2_1
+        //     .iface
+        //     .routes_mut()
+        //     .add_default_ipv4_route(addr_1_2.clone()).expect("could not add route");
         let mut stack2_3: net::device::NetifPair<AsyncGatewayDevice<AsyncGateway<Vec<u8>>>> =
             setup_if(ip_2_3, Box::new(AsyncGatewayDevice::new(dev2to3)));
         stack2_3.iface.set_any_ip(true);
-        stack2_3
-            .iface
-            .routes_mut()
-            .add_default_ipv4_route(addr_2_3.clone()).expect("could not add route");
+        // stack2_3
+        //     .iface
+        //     .routes_mut()
+        //     .add_default_ipv4_route(addr_2_3.clone()).expect("could not add route");
 
         let stack3 = setup_if(ip_3, Box::new(AsyncGatewayDevice::new(dev3)));
 

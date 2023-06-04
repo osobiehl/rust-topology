@@ -60,7 +60,7 @@ pub enum Sysmodule {
 pub enum Transmitter {
     Basic,
     Advanced,
-    Hub,
+    Hub(HubIndex),
 }
 
 pub fn determine_ip(
@@ -89,7 +89,7 @@ pub fn determine_ip(
 
         // case advanced + basic: advanced is channel one
         (Transmitter::Advanced, ModuleNeighborInfo::Advanced(None, Some(_trans))) => {
-            Ipv4Address::new(HubIndex::One.to_ip_octet(), 168, 0, sysmodule_octet)
+            Ipv4Address::new(HubIndex::One.to_ip_octet(), 168, 1, sysmodule_octet)
         }
         (Transmitter::Advanced, ModuleNeighborInfo::Advanced(Some(idx), Some(_trans)))
             if *sysmodule == Sysmodule::HMI =>
@@ -97,7 +97,14 @@ pub fn determine_ip(
             Ipv4Address::new(idx.to_ip_octet(), 168, 1, sysmodule_octet)
         }
         (Transmitter::Advanced, ModuleNeighborInfo::Advanced(Some(idx), Some(_trans))) => {
-            Ipv4Address::new(idx.to_ip_octet(), 168, 0, sysmodule_octet)
+            Ipv4Address::new(idx.to_ip_octet(), 168, 1, sysmodule_octet)
+        }
+
+        (Transmitter::Hub(idx), ModuleNeighborInfo::NoNeighbor) => panic!("empty hub"),
+        // hub has identifier 3 so it is easy to route
+        (Transmitter::Hub(idx), other) => {
+            Ipv4Address::new(idx.to_ip_octet(), 168, 3, sysmodule_octet)
+
         }
         (_, _) => panic!("setup not defined")
     }
