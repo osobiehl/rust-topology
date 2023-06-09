@@ -10,7 +10,7 @@ use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, IpEndpoint, Ipv4Address,
 use crate::net::udp_state::AsyncSocket;
 
 #[derive(Clone,Copy,Debug, PartialEq)]
-enum Direction{
+pub enum Direction{
     Upstream,
     Downstream,
 }
@@ -28,7 +28,7 @@ pub enum ComType {
 impl Into<Transmitter> for ComType{
     fn into(self) -> Transmitter {
         match self {
-            Self::HubCom(_) => Transmitter::Hub,
+            Self::HubCom(idx) => Transmitter::Hub(idx),
             Self::AdvUpstream => Transmitter::Advanced,
             Self::AdvDownstream => Transmitter::Advanced,
             Self::Basic => Transmitter::Basic
@@ -68,6 +68,7 @@ impl ComType {
 pub struct Com {
     base: BasicModule,
     initial_configuration: ComType,
+    assigned_ip: Ipv4Address
 }
 const WAIT_DEFAULT: Duration = Duration::from_millis(5);
 impl Com {
@@ -75,6 +76,7 @@ impl Com {
         Self {
             base,
             initial_configuration,
+            assigned_ip: Ipv4Address::UNSPECIFIED
         }
     }
 
@@ -262,7 +264,7 @@ impl Com {
 
 
     async fn assign_ips(&mut self, module_info: ModuleNeighborInfo){
-        let transmitter: Transmitter = self.initial_configuration.into();
+        let transmitter: Transmitter = self.initial_configuration.clone().into();
         const SYSMODULES: [(IpAddress,  Sysmodule); 3] = [
             (TRANSIENT_PI_ID, Sysmodule::PI),
             (TRANSIENT_PV_ID, Sysmodule::PV),
@@ -276,6 +278,7 @@ impl Com {
             s.send(&Vec::from(new_ip.0), IPEndpoint {addr, port: ADDRESS_ASSIGNMENT_PORT }).await;
             
         }
+        self.assigned_ip = determine_ip(&Sysmodule::COM, &self.initial_configuration.clone().into(), &module_info);
 
     }
 
@@ -299,23 +302,86 @@ impl Com {
         }).await;
     }
 
-    // async fn add_
-    async fn determine_direction(&mut self, recipient: Ipv4Address, info: ModuleNeighborInfo) -> Direction{
-        assert!(self.initial_configuration == ComType::Basic);
+    fn device_index(address: &Ipv4Address)->u8{
+        return address.0[2];
+    }
 
-        
+    pub fn determine_direction_basic(sender_index: u8, destination_index: u8) -> Option<Direction>{
+        const BASIC_INDEX: u8 = 0;
+        if sender_index == destination_index{
+            return None
+        }
+        else if destination_index == BASIC_INDEX{
+            return Some(Direction::Downstream)
+        }
+        else {
+            return Some(Direction::Upstream)
+        }
+    }
+    pub const ADVANCED_INDEX: u8 = 1;
+    pub fn determine_direction_advanced_downstream(sender_index: u8, destination_index: u8) -> Option<Direction>{
 
-        todo!();
-        // let (cidr1, cidr2) = match info{
-            
-        //     NoNeighbor => (Ipv4Cidr{address: assigned_internal_bus_ip.clone(), prefix_len: 24}, Ipv4Cidr{address: assigned_internal_bus_ip.clone(), prefix_len: 24}),
-        //     // if i have an advanced on top I must: route everything going to 192.x.x.x
-        //         // todo get address  from supposed parent
-        //     Advanced(None, _) => {Ipv4Cidr{address: assigned_internal_bus_ip.clone(), prefix_len: 24}, Ipv4Cidr{address: assigned_internal_bus_ip.clone(), prefix_len: 16}},
+        if sender_index == destination_index{
+            return None
+        }
+        // if message comes from above, we do nothing
+        else if destination_index < Self::ADVANCED_INDEX{
+            return Some(Direction::Downstream)
+        }
+        else if destination_index >= Self::ADVANCED_INDEX &&  sender_index < Self::ADVANCED_INDEX {
+            return Some(Direction::Upstream)
+        }
+        else {
+            return None
+        }
 
-        // }
+    }
+    pub const HUB_INDEX: u8 = 1;
+    pub fn determine_direction_advanced_upstream(sender_index: u8, destination_index: u8) -> Option<Direction>{
 
+        if sender_index == destination_index{
+            return None
+        }
+        // if message comes from above, we do nothing
+        else if destination_index > Self::ADVANCED_INDEX{
+            return Some(Direction::Upstream)
+        }
+        else if destination_index <= Self::ADVANCED_INDEX &&  sender_index > Self::ADVANCED_INDEX {
+            return Some(Direction::Downstream)
+        }
+        else {
+            return None
+        }
 
+    }
+
+    pub fn determine_direction_hub(sender_index: u8, destination_index: u8) -> Option<Direction>{
+
+        if sender_index == destination_index{
+            return None
+        }
+        else if destination_index == Self::HUB_INDEX{
+            return Some(Direction::Upstream)
+        }
+        else {
+            return Some(Direction::Downstream)
+        }
+
+    }
+
+    pub fn determine_direction(&self, sender: &Ipv4Address, destination: &Ipv4Address) -> Option<Direction>{
+
+        let own_index = Self::device_index(&self.assigned_ip);
+        let sender_index = Self::device_index(sender);        let destination_index = Self::device_index(destination);
+        let destination_index = Self::device_index(destination);
+
+        match self.initial_configuration{
+            ComType::AdvDownstream => Self::determine_direction_advanced_downstream(sender_index, destination_index),
+            ComType::AdvUpstream => Self::determine_direction_advanced_upstream(sender_index, destination_index),
+            ComType::Basic => Self::determine_direction_basic(sender_index, destination_index),
+            ///TODO: this needs to also have ip index
+            ComType::HubCom(_) => Self::determine_direction_hub(sender_index, destination_index)
+        }
     }
 
     async fn configure_routing(&mut self, assigned_internal_bus_ip: Ipv4Address, module_info: ModuleNeighborInfo ) -> Result<(),()>{
