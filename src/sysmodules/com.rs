@@ -6,8 +6,9 @@ use crate::sysmodule::ModuleNeighborInfo::{Advanced, Basic, Hub, NoNeighbor};
 use crate::sysmodule::{BasicTransmitter, HubIndex, ModuleNeighborInfo, determine_ip, Sysmodule, Transmitter};
 use crate::sysmodules::common::{TRANSIENT_PI_ID, TRANSIENT_PV_ID, TRANSIENT_HMI_ID, ADDRESS_ASSIGNMENT_PORT};
 use futures::future;
-use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, IpEndpoint, Ipv4Address, Ipv6Address, Ipv4Cidr};
+use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, IpEndpoint, Ipv4Address, Ipv6Address, Ipv4Cidr, Ipv4Packet, Ipv4Repr};
 use crate::net::udp_state::AsyncSocket;
+use log::error;
 
 #[derive(Clone,Copy,Debug, PartialEq)]
 pub enum Direction{
@@ -140,34 +141,7 @@ impl Com {
             )
             .await;
         self.assign_ips(state).await;
-        // let parent = self.external_bus.receive_with_timeout(WAIT_DEFAULT).await;
-        // let parent = parent
-        //     .map(|addr | {
-        //         addr.try_into()
-        //             .expect("did not receive module neighbor info!")
-        //     })
-        //     .unwrap_or(ModuleNeighborInfo::NoNeighbor);
-
-        // let child = self.base.internal_bus.receive_with_timeout(WAIT_DEFAULT).await;
-
-        // let child = child
-        //     .map(|addr| {
-        //         addr.try_into()
-        //             .expect("did not receive module neighbor info!")
-        //     })
-        //     .unwrap_or(ModuleNeighborInfo::NoNeighbor);
-
-        // let state = match (parent, child) {
-        //     (NoNeighbor, NoNeighbor) => ModuleNeighborInfo::Advanced(None, None),
-        //     (Hub(i), NoNeighbor) => Advanced(Some(i), None),
-        //     (NoNeighbor, Basic) => Advanced(None, Some(BasicTransmitter())),
-        //     (Hub(i), Basic) => Advanced(Some(i), Some(BasicTransmitter())),
-        //     (_, _) => panic!("unknown configuration!"),
-        // };
-
-        // println!("state of advanced: {:?}", &state);
-        // self.base.internal_bus.send(state.clone().into());
-        // self.external_bus.send(state.clone().into());
+ 
     }
 
     async fn configure_downstream(&mut self) {
@@ -220,20 +194,6 @@ impl Com {
             }
         }
 
-        // let child = self.external_bus.receive_with_timeout(WAIT_DEFAULT).await;
-        // match child {
-        //     None => self
-        //         .base
-        //         .internal_bus
-        //         .send(ModuleNeighborInfo::NoNeighbor.into()),
-        //     Some(_) => self
-        //         .base
-        //         .internal_bus
-        //         .send(ModuleNeighborInfo::Basic.into()),
-        // };
-        // let state = self.base.internal_bus.receive().await;
-        // println!("sending state downstream ...");
-        // self.external_bus.send(state);
     }
 
     async fn configure_basic(&mut self) {
@@ -281,8 +241,6 @@ impl Com {
         self.assigned_ip = determine_ip(&Sysmodule::COM, &self.initial_configuration.clone().into(), &module_info);
 
     }
-
-
 
     async fn set_upstream_address(&mut self, cidr: IpCidr){
         self.base.modify_netif(|state| {
@@ -372,40 +330,37 @@ impl Com {
 
     pub fn determine_direction(&self, sender: &Ipv4Address, destination: &Ipv4Address) -> Option<Direction>{
 
-        let own_index = Self::device_index(&self.assigned_ip);
-        let sender_index = Self::device_index(sender);        let destination_index = Self::device_index(destination);
+        let sender_index = Self::device_index(sender);     
         let destination_index = Self::device_index(destination);
 
         match self.initial_configuration{
             ComType::AdvDownstream => Self::determine_direction_advanced_downstream(sender_index, destination_index),
             ComType::AdvUpstream => Self::determine_direction_advanced_upstream(sender_index, destination_index),
             ComType::Basic => Self::determine_direction_basic(sender_index, destination_index),
-            ///TODO: this needs to also have ip index
+            // TODO: this needs to also have ip index
             ComType::HubCom(_) => Self::determine_direction_hub(sender_index, destination_index)
         }
     }
 
-    async fn configure_routing(&mut self, assigned_internal_bus_ip: Ipv4Address, module_info: ModuleNeighborInfo ) -> Result<(),()>{
-        match (self.initial_configuration, module_info){
-            (ComType::Basic, NoNeighbor) => println!("basic w/ no neighbor, no routing needed!"),
-            (ComType::Basic, Advanced(None, _)) => println!("basic w/ advanced, route needed!"),
-            (ComType::Basic, Advanced(Some(idx), _)) => println!("basic in full mode"),
-            (ComType::Basic, Hub(idx)) => println!("todo: basic with hub"),
-
-            (ComType::AdvDownstream, Advanced(_, None)) => println!("err: downstream com port expects a basic"),
-            (ComType::AdvDownstream, Advanced(None, Some(_))) =>  println!("TODO: 2-index routing"), // TODO 2-index routing
-            (ComType::AdvDownstream, Advanced(Some(idx), Some(_) ) ) => println!("TODO: Routing based on index and middle"),
-            
-            (ComType::HubCom(x), Advanced(_, None ) ) | (ComType::HubCom(x), Basic ) => println!("TODO: Routing for hub"),
-            (ComType::HubCom(x), Advanced(_, Some(_) ) ) => println!("TODO: full routing for hub"),
-            (_,_) => panic!("unknown configuration!")
-
-
-
-            
+    async fn run_routing(&mut self){
+        let mut sock1 = self.base.raw_socket().await;
+        let incoming = sock1.recv().await.expect("nothing received from socket!");
+        let ip_addr = Ipv4Packet::new_checked(&incoming);
+        let Ok(x) = ip_addr else {
+            error!("receive malformed IP packet on raw socket");
+            return;
         };
-        return Ok(());
+        let src_octet = x.src_addr().0[2];
+        let dest_octet = x.dst_addr().0[2];
+        let Some(dir) = self.determine_direction(& x.src_addr(), &x.dst_addr()) else {
+            return;
+        };
+        
+
+        
     }
+
+
 }
 
 #[async_trait::async_trait]
