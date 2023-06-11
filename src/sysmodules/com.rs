@@ -306,12 +306,13 @@ impl Com {
         return address.0[2];
     }
 
+    pub const BASIC_INDEX: u8 = 0;
+
     pub fn determine_direction_basic(sender_index: u8, destination_index: u8) -> Option<Direction>{
-        const BASIC_INDEX: u8 = 0;
         if sender_index == destination_index{
             return None
         }
-        else if destination_index == BASIC_INDEX{
+        else if destination_index == Self::BASIC_INDEX{
             return Some(Direction::Downstream)
         }
         else {
@@ -336,7 +337,7 @@ impl Com {
         }
 
     }
-    pub const HUB_INDEX: u8 = 1;
+    pub const HUB_INDEX: u8 = 2;
     pub fn determine_direction_advanced_upstream(sender_index: u8, destination_index: u8) -> Option<Direction>{
 
         if sender_index == destination_index{

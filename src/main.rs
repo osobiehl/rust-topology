@@ -559,4 +559,104 @@ mod test {
         // end_adv.await;
         // end.await;
     }
+
+    use sysmodules::com::{Com,Direction};
+    #[test]
+    fn test_basic_direction(){
+
+        let r = Com::determine_direction_basic(Com::ADVANCED_INDEX, Com::BASIC_INDEX);
+        assert!(r.is_some() && r.unwrap() == Direction::Downstream);
+
+        let r = Com::determine_direction_basic(Com::HUB_INDEX, Com::BASIC_INDEX);
+        assert!(r.is_some() && r.unwrap() == Direction::Downstream);
+
+        let r = Com::determine_direction_basic(Com::BASIC_INDEX, Com::ADVANCED_INDEX);
+        assert!(r.expect("direction expected") == Direction::Upstream);
+
+
+        let r = Com::determine_direction_basic(Com::BASIC_INDEX, Com::HUB_INDEX);
+        assert!(r.expect("direction expected") == Direction::Upstream);
+
+        let r = Com::determine_direction_basic(Com::BASIC_INDEX, Com::BASIC_INDEX);
+        assert!(r.is_none());
+    }
+
+    #[test]
+    fn test_advanced_downstream_direction(){
+
+        let r = Com::determine_direction_advanced_downstream(Com::ADVANCED_INDEX, Com::BASIC_INDEX);
+        assert!(r.is_some() && r.unwrap() == Direction::Downstream);
+
+        let r = Com::determine_direction_advanced_downstream(Com::ADVANCED_INDEX, Com::HUB_INDEX);
+        assert!(r.is_none());
+
+        let r = Com::determine_direction_advanced_downstream(Com::ADVANCED_INDEX, Com::ADVANCED_INDEX);
+        assert!(r.is_none());
+
+        let r = Com::determine_direction_advanced_downstream(Com::BASIC_INDEX, Com::ADVANCED_INDEX);
+        assert!(r.expect("direction should be given") == Direction::Upstream);
+
+        let r = Com::determine_direction_advanced_downstream(Com::BASIC_INDEX, Com::HUB_INDEX);
+        assert!(r.expect("direction should be given") == Direction::Upstream);
+
+        let r = Com::determine_direction_advanced_downstream(Com::HUB_INDEX, Com::BASIC_INDEX);
+        assert!(r.expect("direction should be given") == Direction::Downstream);
+
+        let r = Com::determine_direction_advanced_downstream(Com::HUB_INDEX, Com::ADVANCED_INDEX);
+        assert!(r.is_none());
+
+
+
+
+    }
+
+
+    #[test]
+    fn test_advanced_upstream_direction(){
+
+        let r = Com::determine_direction_advanced_upstream(Com::ADVANCED_INDEX, Com::BASIC_INDEX);
+        assert!(r.is_none());
+
+        let r = Com::determine_direction_advanced_upstream(Com::ADVANCED_INDEX, Com::HUB_INDEX);
+        assert!(r.expect("should be upstream") == Direction::Upstream);
+
+        let r = Com::determine_direction_advanced_upstream(Com::ADVANCED_INDEX, Com::ADVANCED_INDEX);
+        assert!(r.is_none());
+
+        let r = Com::determine_direction_advanced_upstream(Com::BASIC_INDEX, Com::ADVANCED_INDEX);
+        assert!(r.is_none());
+
+        let r = Com::determine_direction_advanced_upstream(Com::BASIC_INDEX, Com::HUB_INDEX);
+        assert!(r.expect("direction should be given") == Direction::Upstream);
+
+        let r = Com::determine_direction_advanced_upstream(Com::HUB_INDEX, Com::BASIC_INDEX);
+        assert!(r.expect("direction should be given") == Direction::Downstream);
+
+        let r = Com::determine_direction_advanced_upstream(Com::HUB_INDEX, Com::ADVANCED_INDEX);
+        assert!(r.unwrap() == Direction::Downstream);
+
+    }
+
+    #[test]
+    fn test_hub_direction(){
+
+        let r = Com::determine_direction_hub(Com::HUB_INDEX, Com::BASIC_INDEX);
+        assert!(r.expect("should be a value") == Direction::Downstream);
+
+        let r = Com::determine_direction_hub(Com::ADVANCED_INDEX, Com::HUB_INDEX);
+        assert!(r.expect("should be upstream") == Direction::Upstream);
+
+        let r = Com::determine_direction_hub(Com::HUB_INDEX, Com::HUB_INDEX);
+        assert!(r.is_none());
+
+        let r = Com::determine_direction_hub(Com::BASIC_INDEX, Com::HUB_INDEX);
+        assert!(r.expect("direction should be given") ==  Direction::Upstream);
+
+        let r = Com::determine_direction_hub(Com::HUB_INDEX, Com::BASIC_INDEX);
+        assert!(r.expect("direction should be given") == Direction::Downstream);
+
+        let r = Com::determine_direction_hub(Com::HUB_INDEX, Com::ADVANCED_INDEX);
+        assert!(r.unwrap() == Direction::Downstream);
+
+    }
 }
