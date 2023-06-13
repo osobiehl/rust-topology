@@ -27,13 +27,14 @@ pub trait NetStack<D: AsyncDevice> {
 
 pub trait SocketAdapter {
     type Output: Send ;
-    type Destination: Send + Into<IpAddress> + Clone;
+    type Destination: Send + Clone;
     type InputSocket<'a>: AnySocket<'a>;
     fn register_receive_waker<'a>(sock: &mut Self::InputSocket<'a>, waker: &std::task::Waker);
     fn receive<'a>(sock: &mut Self::InputSocket<'a>) -> Result<Self::Output, ()>;
     fn is_open<'a>(sock: &mut Self::InputSocket<'a>) -> bool;
     fn send<'a>(sock: &mut Self::InputSocket<'a>, data: &[u8], destination: Self::Destination);
     fn close<'a>(sock: &mut Self::InputSocket<'a>);
+    fn netif_strategy<D: AsyncDevice>( destination: Self::Destination) -> Box<dyn Fn(& mut Vec<NetifPair<D>>) -> & mut NetifPair<D> >; 
 
 }
 
@@ -78,6 +79,19 @@ impl SocketAdapter for UDP {
     fn close<'a>(sock: &mut Self::InputSocket<'a>){
         sock.close();
     }
+fn netif_strategy<D: AsyncDevice>( destination: Self::Destination) -> Box<dyn Fn(& mut Vec<NetifPair<D>>) -> & mut NetifPair<D> > {
+     
+        return Box::new(move |ifaces| {
+            
+            let position = ifaces.iter().position( |iface| iface
+                .iface
+                .ip_addrs()
+                .iter()
+                .find(|cidr| cidr.contains_addr(&destination.addr)).is_some()).unwrap_or(0);
+            return ifaces.get_mut(position).expect("no network interfaces found");
+        })
+
+    }
 
 }
 
@@ -103,6 +117,19 @@ impl SocketAdapter for Raw {
     }
     fn close<'a>(sock: &mut Self::InputSocket<'a>){
         // raw sockets cannot be closed (?) 
+    }
+    fn netif_strategy< D: AsyncDevice>( destination: Self::Destination) -> Box<dyn Fn(& mut Vec<NetifPair<D>>) -> & mut NetifPair<D> > {
+     
+        return Box::new(move |ifaces| {
+            
+            let position = ifaces.iter().position( |iface| iface
+                .iface
+                .ip_addrs()
+                .iter()
+                .find(|cidr| cidr.contains_addr(&destination)).is_some()).unwrap_or(0);
+            return ifaces.get_mut(position).expect("no network interfaces found");
+        })
+
     }
 }
 
@@ -144,7 +171,7 @@ A: SocketAdapter + Send{
         let s = state.sockets.get_mut::<A::InputSocket<'static> >(self.handle);
         A::send(s, data, dest.clone());
         drop(s);
-        state.poll_for_send(&dest.into());
+        state.poll_for_send(A::netif_strategy(dest)  );
     }
 }
 
@@ -303,39 +330,14 @@ impl<'a, D: AsyncDevice> UDPState<D> {
         return udp_handle;
     }
 
-    pub fn poll_for_send(&mut self, endpoint: &IpAddress) {
-        if endpoint.is_unicast() {
-            let mut done = false;
-            for iface in &mut self.netifs {
-                let _found: bool = false;
-                let found = iface
-                    .iface
-                    .ip_addrs()
-                    .iter()
-                    .find(|cidr| cidr.contains_addr(endpoint));
-                if let Some(x) = found {
-                    let timestamp = Instant::now();
-                    trace!("using interface: {} for request {}", x, endpoint);
-                    iface
-                        .iface
-                        .poll(timestamp, iface.device.as_mut(), &mut self.sockets);
-                    done = true;
-                    break;
-                }
-            }
-            if !done {
-                trace!("warn: no route found for {}", endpoint);
-            }
-        }
-        if endpoint.is_broadcast() {
-            trace!("sending broadcast through default netif");
-            self.poll();
-        } else if endpoint.is_multicast() {
-            trace!("warn: multicast not supported yet");
-            self.poll();
-        } else {
-            self.poll();
-        }
+    pub fn poll_for_send(&mut self, strategy: Box<dyn Fn(&mut Vec<NetifPair<D>>) -> &mut NetifPair<D>>) {
+        let iface = strategy(&mut self.netifs);
+        let timestamp = Instant::now();
+        trace!("using interface: {} ", iface.iface.ip_addrs()[0]);
+        iface
+            .iface
+            .poll(timestamp, iface.device.as_mut(), &mut self.sockets);
+
     }
 
     pub fn poll(&mut self) -> bool {
