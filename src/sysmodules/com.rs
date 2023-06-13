@@ -1,7 +1,9 @@
 use std::time::Duration;
 
 use super::common::{BasicModule, SysModuleStartup, TRANSIENT_GATEWAY_ID};
-use crate::net::udp_state::{NetStack, UDP, IPEndpoint};
+use crate::async_communication::AsyncGateway;
+use crate::net::device::AsyncGatewayDevice;
+use crate::net::udp_state::{NetStack, UDP, IPEndpoint, AsyncSocketHandle, RawDirection};
 use crate::sysmodule::ModuleNeighborInfo::{Advanced, Basic, Hub, NoNeighbor};
 use crate::sysmodule::{BasicTransmitter, HubIndex, ModuleNeighborInfo, determine_ip, Sysmodule, Transmitter};
 use crate::sysmodules::common::{TRANSIENT_PI_ID, TRANSIENT_PV_ID, TRANSIENT_HMI_ID, ADDRESS_ASSIGNMENT_PORT};
@@ -69,7 +71,8 @@ impl ComType {
 pub struct Com {
     base: BasicModule,
     initial_configuration: ComType,
-    assigned_ip: Ipv4Address
+    assigned_ip: Ipv4Address,
+    redirect_socket: Option<AsyncSocketHandle<AsyncGatewayDevice<AsyncGateway<Vec<u8>>>, RawDirection>>
 }
 const WAIT_DEFAULT: Duration = Duration::from_millis(5);
 impl Com {
@@ -77,7 +80,8 @@ impl Com {
         Self {
             base,
             initial_configuration,
-            assigned_ip: Ipv4Address::UNSPECIFIED
+            assigned_ip: Ipv4Address::UNSPECIFIED,
+            redirect_socket: None
         }
     }
 
@@ -328,12 +332,12 @@ impl Com {
 
     }
 
-    pub fn determine_direction(&self, sender: &Ipv4Address, destination: &Ipv4Address) -> Option<Direction>{
+    pub fn determine_direction(configuration: ComType, sender: &Ipv4Address, destination: &Ipv4Address) -> Option<Direction>{
 
         let sender_index = Self::device_index(sender);     
         let destination_index = Self::device_index(destination);
 
-        match self.initial_configuration{
+        match configuration{
             ComType::AdvDownstream => Self::determine_direction_advanced_downstream(sender_index, destination_index),
             ComType::AdvUpstream => Self::determine_direction_advanced_upstream(sender_index, destination_index),
             ComType::Basic => Self::determine_direction_basic(sender_index, destination_index),
@@ -343,17 +347,17 @@ impl Com {
     }
 
     async fn run_routing(&mut self){
-        let mut sock1 = self.base.raw_socket().await;
-        let incoming = sock1.recv().await.expect("nothing received from socket!");
+        let com_type = self.initial_configuration;
+        let socket = self.redirect_socket.as_mut().unwrap();
+        let incoming = socket.recv().await.expect("nothing received from socket!");
         let ip_addr = Ipv4Packet::new_checked(&incoming);
         let Ok(x) = ip_addr else {
             error!("receive malformed IP packet on raw socket");
             return;
         };
-        let src_octet = x.src_addr().0[2];
-        let dest_octet = x.dst_addr().0[2];
-        let Some(dir) = self.determine_direction(& x.src_addr(), &x.dst_addr()) else {
-            return;
+
+        if let Some(dir) = Self::determine_direction(com_type, & x.src_addr(), &x.dst_addr()) {
+            socket.send(&incoming, dir).await;
         };
         
 
@@ -368,6 +372,7 @@ impl SysModuleStartup for Com {
     async fn run_once(&mut self) {
         println!("setting up routing:");
         tokio::time::sleep(Duration::from_millis(1000)).await;
+        self.run_routing();
     }
     async fn on_start(&mut self) {
         println!("starting!!");
@@ -377,6 +382,7 @@ impl SysModuleStartup for Com {
             ComType::AdvDownstream => self.configure_downstream().await,
             ComType::Basic => self.configure_basic().await,
         }
+        self.redirect_socket = Some( self.base.raw_direction_socket().await);
 
         // no-op for now
     }

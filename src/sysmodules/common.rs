@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::sync::mpsc::UnboundedSender;
-use crate::net::udp_state::{AsyncSocketHandle, NetStack, UDPState, UDP, Raw};
+use crate::net::udp_state::{AsyncSocketHandle, NetStack, UDPState, UDP, Raw, RawDirection};
 use smoltcp::wire::{IpAddress, Ipv4Address};
 
 pub const TRANSIENT_HMI_ID: IpAddress = IpAddress::v4(192, 168, 69, 1);
@@ -40,6 +40,9 @@ impl NetStack<Device> for BasicModule{
     }
     async fn raw_socket(&self) -> AsyncSocketHandle<Device, Raw>{
         AsyncSocketHandle::<Device, Raw>::new_raw(self.netif.clone()).await
+    }
+    async fn raw_direction_socket (&self)-> AsyncSocketHandle<Device, RawDirection>{
+        AsyncSocketHandle::<Device, RawDirection>::new(self.netif.clone()).await
     }
 
 

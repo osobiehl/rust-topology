@@ -1,4 +1,5 @@
 use crate::async_communication::AsyncChannel;
+use crate::sysmodules::com::Direction;
 
 use futures::FutureExt;
 
@@ -20,6 +21,7 @@ use std::future::Future;
 pub trait NetStack<D: AsyncDevice> {
     async fn socket<T: Into<IpListenEndpoint> + Send>(&self, endpoint: T) -> AsyncSocketHandle<D, UDP>;
     async fn raw_socket(&self) -> AsyncSocketHandle<D, Raw>;
+    async fn raw_direction_socket (&self)-> AsyncSocketHandle<D, RawDirection>;
     async fn modify_netif<F>(&self, f: F)
     where
         F: FnOnce(&mut UDPState<D>) + Send;
@@ -38,12 +40,14 @@ pub trait SocketAdapter {
 
 }
 
-pub struct AsyncUDP<'a>(pub &'a mut udp::Socket<'a>);
-pub struct AsyncRaw<'a>(pub &'a mut raw::Socket<'a>);
+
+
 pub type UdpOutput = (Vec<u8>, IpEndpoint);
 
 pub struct UDP {}
 pub struct Raw {}
+
+pub struct RawDirection {}
 
 #[derive(Clone, Copy, Debug)]
 pub struct IPEndpoint {
@@ -133,6 +137,41 @@ impl SocketAdapter for Raw {
     }
 }
 
+impl SocketAdapter for RawDirection{
+    type Output = Vec<u8>;
+    type Destination = Direction;
+    type InputSocket<'a> = raw::Socket<'a>;
+    fn receive<'a>(sock: &mut Self::InputSocket<'a>) -> Result<Self::Output, ()> {
+        sock.recv().map(Vec::<u8>::from).map_err(|_| ())
+    }
+
+    fn register_receive_waker<'a>(sock: &mut Self::InputSocket<'a>, waker: &std::task::Waker) {
+        sock.register_recv_waker(waker);
+    }
+
+    fn is_open<'a>(_sock: &mut Self::InputSocket<'a>) -> bool {
+        true
+    }
+    fn send<'a>(sock: &mut Self::InputSocket<'a>, data: &[u8], _destination: Self::Destination) {
+        
+
+        let _ = sock.send_slice(&data);
+    }
+    fn close<'a>(sock: &mut Self::InputSocket<'a>){
+        // raw sockets cannot be closed (?) 
+    }
+    fn netif_strategy< D: AsyncDevice>( destination: Self::Destination) -> Box<dyn Fn(& mut Vec<NetifPair<D>>) -> & mut NetifPair<D> > {
+     
+        return Box::new(move |ifaces| {
+            
+            return ifaces.get_mut(destination as usize).expect("did not find network interface!")
+        })
+
+    }
+}
+
+
+
 pub struct AsyncSocketHandle<D: AsyncDevice, SockType: SocketAdapter> {
     handle: SocketHandle,
     state: Arc<Mutex<UDPState<D>>>,
@@ -196,6 +235,20 @@ impl<D: AsyncDevice + AsyncChannel<Vec<u8>>> AsyncSocketHandle<D, Raw> {
     pub async fn new_raw(
         state: Arc<Mutex<UDPState<D>>>,
     ) -> AsyncSocketHandle<D, Raw> {
+        let state_2 = state.clone();
+        let mut s = state.lock().await;
+        return Self {
+            handle: s.new_raw_socket(),
+            state: state_2,
+            socket: Default::default()
+        };
+    }
+}
+
+impl<D: AsyncDevice + AsyncChannel<Vec<u8>>> AsyncSocketHandle<D, RawDirection> {
+    pub async fn new(
+        state: Arc<Mutex<UDPState<D>>>,
+    ) -> AsyncSocketHandle<D, RawDirection> {
         let state_2 = state.clone();
         let mut s = state.lock().await;
         return Self {
