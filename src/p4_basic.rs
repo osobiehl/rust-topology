@@ -1,6 +1,6 @@
 
 use crate::async_communication::AsyncGateway;
-use crate::utils::{new_internal_module, new_netif, new_module};
+use crate::utils::{new_internal_module, new_netif, new_module, new_com};
 use crate::{
     internal_bus,
     sysmodules::{com::*, common::*},
@@ -15,7 +15,7 @@ use crate::sysmodules::common::{TRANSIENT_HMI_ID, TRANSIENT_PV_ID, TRANSIENT_GAT
 // basic p4
 pub struct P4Basic {
     pub pv: (PV, TestingSender),
-    pub com: Option<(Com, TestingSender)>,
+    pub com: Option<Com>,
     pub hmi: (HMI, TestingSender),
     pub pi: Option<(PI, TestingSender)>,
     pub bus: InternalBus,
@@ -35,14 +35,13 @@ impl P4Basic {
         bus.subscribe(ib_gateway);
 
         // this should be an enum but oh well
-        let mut com: Option<(Com, TestingSender)>= None;
+        let mut com: Option<Com>= None;
         let mut Pi: Option<(PI, TestingSender)> = None;
 
         if let Some(external_bus) = parent{
             let net = setup_if(ComType::Basic.external_bus_ip(), Box::new(AsyncGatewayDevice::new(external_bus)) );
             
-            let (com_mod, test_mod) = new_module( vec![gateway_netif, net]);
-            com = Some((Com::new(com_mod, ComType::Basic), test_mod));
+            com = Some(new_com(vec![gateway_netif, net], ComType::Basic));
         }
         else{
             let  (pi, test) = new_module(vec![gateway_netif]);
@@ -53,7 +52,7 @@ impl P4Basic {
 
         return Self {
             pv: (PV(pv), pv_test_tx),
-            com: com,
+            com,
             hmi: (HMI(hmi), hmi_test_tx),
             pi: Pi,
             bus,
@@ -71,7 +70,7 @@ impl P4Basic {
         let hmi = spawn_test_sysmodule(self.hmi.0 .0);
         let mut futures = vec![pv, hmi];
         if let Some(c ) = self.com{
-            futures.push(spawn_test_sysmodule(c.0));
+            futures.push(spawn_test_sysmodule(c));
         }
         if let Some(c) = self.pi{
             futures.push(spawn_test_sysmodule(c.0.base));

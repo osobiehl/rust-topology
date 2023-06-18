@@ -4,6 +4,7 @@ use crate::async_communication::AsyncGateway;
 use crate::TestDevice;
 use crate::net::device::{NetifPair, setup_if, AsyncGatewayDevice};
 use crate::net::udp_state::UDPState;
+use crate::sysmodules::com::{Com, ComType};
 use crate::{
     sysmodules::{common::*},
 };
@@ -36,13 +37,17 @@ pub fn new_internal_module(
 
 }
 
+
+pub fn new_com(netifs: Vec<NetifPair<TestDevice>>, config: ComType ) -> Com {
+    return Com::new(Arc::new(Mutex::new(UDPState::new(netifs))), config)
+}
+
+
 pub fn new_module(netifs: Vec<NetifPair<TestDevice>>)->(BasicModule, TestingSender){
     let udp_1: Arc<Mutex<UDPState<TestDevice>>> = Arc::new(Mutex::new(UDPState::new(netifs) ) );
     let (mod_test_tx, mod_test_rx) = tokio::sync::mpsc::unbounded_channel();
     let module = BasicModule::new(udp_1, mod_test_rx );
     return (module, mod_test_tx)
-
-
 }
 
 

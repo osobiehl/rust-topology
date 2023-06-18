@@ -66,6 +66,7 @@ async fn main() {
 mod test {
     use crate::net::udp_state::IPEndpoint;
     use crate::p4_basic::P4Basic;
+    use crate::sysmodule::determine_ip;
 
     pub use super::*;
 
@@ -75,6 +76,7 @@ mod test {
     use smoltcp::socket::{tcp, udp};
     use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address, Ipv6Address};
     use std::sync::Arc;
+    use std::time::Duration;
     use tokio::sync::Mutex;
 
     #[tokio::test(flavor = "multi_thread")]
@@ -534,30 +536,7 @@ mod test {
         let a = end_adv.await;
         end.await;
 
-        // let dead = DeadExternalBus {};
-        // let advanced = P4Advanced::new(Some(Box::new(dead)), Some(Box::new(adv)));
-        // let com_send = basic.com.1.clone();
 
-        // let end_adv = tokio::spawn(async move {
-        //     advanced.start().await;
-        // });
-        // let end = tokio::spawn(async move {
-        //     basic.start().await;
-        // });
-        // let mut f = async move |sys: &mut dyn SysModule| {sys.send("hello".as_bytes().to_vec())};
-        // let func: SysmoduleRPC = Box::new( move |sys: &mut dyn SysModule|
-        // {
-        //     return async
-        //     {
-        //         sys.send( "hello from com".as_bytes().to_vec());
-
-        //     }.boxed()
-        // });
-        // tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-        // com_send.send(
-        // func);
-        // end_adv.await;
-        // end.await;
     }
 
     use sysmodules::com::{Com,Direction};
@@ -658,5 +637,79 @@ mod test {
         let r = Com::determine_direction_hub(Com::HUB_INDEX, Com::ADVANCED_INDEX);
         assert!(r.unwrap() == Direction::Downstream);
 
+    }
+
+    use sysmodules::common::{BasicModule};
+    use net::udp_state::NetStack;
+    use sysmodule::{Sysmodule, Transmitter};
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_single_module_hello_world() {
+        let (adv, bas) = AsyncGateway::<Vec<u8>>::new();
+        let advanced = P4Advanced::new(None, Some(adv));
+        let HMI = advanced.hmi.1.clone();
+        let PV = advanced.pv.as_ref().unwrap().1.clone();
+
+        const V_STR: &str = "sample pv value!";
+        const PORT: u16 = 1111;
+        HMI.send(Box::new(|sys| {
+
+            return async{
+                let mut sock = sys.socket(PORT).await;
+                let ans = sock.receive_with_timeout(Duration::from_millis(100)).await.expect("timeout receiving data");
+                println!("receive: {}", std::str::from_utf8(&ans.0).unwrap()  );
+                assert!(ans.0 == V_STR.as_bytes());
+            }.boxed();
+            
+        })).unwrap_or_else( |_| panic!("could not send test command!"));
+
+        PV.send(Box::new(|sys| {
+
+            return async{
+                let mut sock = sys.socket(PORT).await;
+                let addr = determine_ip( &Sysmodule::HMI , &Transmitter::Advanced, &sysmodule::ModuleNeighborInfo::Advanced(None, None));
+
+                let ip = IPEndpoint{
+                    addr: smoltcp::wire::IpAddress::Ipv4(addr),
+                    port: PORT
+                };
+                let ans = sock.send(V_STR.as_bytes()  , ip ).await;
+            }.boxed();
+            
+        })).unwrap_or_else( |_| panic!("could not send test command!"));
+
+
+        let end_adv = tokio::spawn(async move {
+            advanced.start().await;
+        });
+
+
+
+
+
+        let a = end_adv.await;
+        // let dead = DeadExternalBus {};
+        // let advanced = P4Advanced::new(Some(Box::new(dead)), Some(Box::new(adv)));
+        // let com_send = basic.com.1.clone();
+
+        // let end_adv = tokio::spawn(async move {
+        //     advanced.start().await;
+        // });
+        // let end = tokio::spawn(async move {
+        //     basic.start().await;
+        // });
+        // let mut f = async move |sys: &mut dyn SysModule| {sys.send("hello".as_bytes().to_vec())};
+        // let func: SysmoduleRPC = Box::new( move |sys: &mut dyn SysModule|
+        // {
+        //     return async
+        //     {
+        //         sys.send( "hello from com".as_bytes().to_vec());
+
+        //     }.boxed()
+        // });
+        // tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        // com_send.send(
+        // func);
+        // end_adv.await;
+        // end.await;
     }
 }

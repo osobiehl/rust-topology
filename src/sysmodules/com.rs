@@ -1,9 +1,9 @@
 use std::time::Duration;
 
-use super::common::{BasicModule, SysModuleStartup, TRANSIENT_GATEWAY_ID};
+use super::common::{BasicModule, SysModuleStartup, TRANSIENT_GATEWAY_ID, Device};
 use crate::async_communication::AsyncGateway;
 use crate::net::device::AsyncGatewayDevice;
-use crate::net::udp_state::{NetStack, UDP, IPEndpoint, AsyncSocketHandle, RawDirection};
+use crate::net::udp_state::{NetStack, UDP, IPEndpoint, AsyncSocketHandle, RawDirection, UDPState};
 use crate::sysmodule::ModuleNeighborInfo::{Advanced, Basic, Hub, NoNeighbor};
 use crate::sysmodule::{BasicTransmitter, HubIndex, ModuleNeighborInfo, determine_ip, Sysmodule, Transmitter};
 use crate::sysmodules::common::{TRANSIENT_PI_ID, TRANSIENT_PV_ID, TRANSIENT_HMI_ID, ADDRESS_ASSIGNMENT_PORT};
@@ -11,6 +11,9 @@ use futures::future;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, IpEndpoint, Ipv4Address, Ipv6Address, Ipv4Cidr, Ipv4Packet, Ipv4Repr};
 use crate::net::udp_state::AsyncSocket;
 use log::error;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
 
 #[derive(Clone,Copy,Debug, PartialEq)]
 pub enum Direction{
@@ -49,36 +52,18 @@ impl ComType {
     }
 }
 
-// impl Into<u8> for ComType{
-//     fn into(self) -> u8 {
-//          match self{
-//             ComType::HubCom(i) => i as u8,
-//             Self::AdvUpstream => 1,
-//             Self::AdvDownstream => 2,
-//             Self::Basic => 3,
-//          }
-//     }
-// }
-// const HUB_IDENTIFIER: u8 = 2;
-// const ADV_IDENTIFIER: u8 = 1;
-// const BASIC_IDENTIFIER: u8 = 0;
-// impl Into<Ipv4Addr> for ComType{
-//     fn into(self) -> Ipv4Addr {
-
-//     }
-// }
-
 pub struct Com {
-    base: BasicModule,
+
+    netif: Arc<Mutex<UDPState<Device>>>,
     initial_configuration: ComType,
     assigned_ip: Ipv4Address,
     redirect_socket: Option<AsyncSocketHandle<AsyncGatewayDevice<AsyncGateway<Vec<u8>>>, RawDirection>>
 }
 const WAIT_DEFAULT: Duration = Duration::from_millis(5);
 impl Com {
-    pub fn new(base: BasicModule, initial_configuration: ComType) -> Self {
+    pub fn new(base: Arc<Mutex<UDPState<Device>>>, initial_configuration: ComType) -> Self {
         Self {
-            base,
+            netif: base,
             initial_configuration,
             assigned_ip: Ipv4Address::UNSPECIFIED,
             redirect_socket: None
@@ -98,8 +83,8 @@ impl Com {
     }
 
     async fn configure_upstream(&mut self) {
-        let mut parent_socket  = self.base.socket(EXTERNAL_BUS_TRANSIENT_PORT).await;
-        let mut child_socket = self.base.socket(INTERNAL_BUS_TRANSIENT_COM_PORT).await;
+        let mut parent_socket  = self.netif.socket(EXTERNAL_BUS_TRANSIENT_PORT).await;
+        let mut child_socket = self.netif.socket(INTERNAL_BUS_TRANSIENT_COM_PORT).await;
 
         let parent_res: Result<(Vec<u8>, IpEndpoint), ()> =
             parent_socket.receive_with_timeout(WAIT_DEFAULT).await;
@@ -154,8 +139,8 @@ impl Com {
                 crate::async_communication::AsyncGateway<Vec<u8>>,
                
             >,
-            UDP> = self.base.socket(EXTERNAL_BUS_TRANSIENT_PORT).await;
-        let mut socket_internal_bus = self.base.socket(INTERNAL_BUS_TRANSIENT_COM_PORT).await;
+            UDP> = self.netif.socket(EXTERNAL_BUS_TRANSIENT_PORT).await;
+        let mut socket_internal_bus = self.netif.socket(INTERNAL_BUS_TRANSIENT_COM_PORT).await;
 
         let child = socket_external_bus.receive_with_timeout(WAIT_DEFAULT).await;
         println!("received from child! ");
@@ -193,6 +178,8 @@ impl Com {
                     .await;
 
                 if let ModuleNeighborInfo::Advanced(None, _ ) = state.clone(){
+                    println!("state from pov of basic downstream: {:?}", &state);
+
                     self.assign_ips(state).await;
                 }
             }
@@ -202,7 +189,7 @@ impl Com {
 
     async fn configure_basic(&mut self) {
         println!("configuring basic...");
-        let mut socket_parent = self.base.socket(EXTERNAL_BUS_TRANSIENT_PORT).await;
+        let mut socket_parent = self.netif.socket(EXTERNAL_BUS_TRANSIENT_PORT).await;
         socket_parent
             .send(
                 &ModuleNeighborInfo::Basic.into_vec(),
@@ -237,7 +224,7 @@ impl Com {
 
         for (addr, module) in SYSMODULES {
             let new_ip = determine_ip(&module, &transmitter, &module_info);
-            let mut s = self.base.socket( ADDRESS_ASSIGNMENT_PORT).await;
+            let mut s = self.netif.socket( ADDRESS_ASSIGNMENT_PORT).await;
             
             s.send(&Vec::from(new_ip.0), IPEndpoint {addr, port: ADDRESS_ASSIGNMENT_PORT }).await;
             
@@ -247,7 +234,7 @@ impl Com {
     }
 
     async fn set_upstream_address(&mut self, cidr: IpCidr){
-        self.base.modify_netif(|state| {
+        self.netif.modify_netif(|state| {
             let netif = &mut state.netifs[0].iface;
             netif.set_any_ip(true);
             netif.update_ip_addrs(|addrs| {addrs.clear(); addrs.push(cidr);});
@@ -256,7 +243,7 @@ impl Com {
     }
 
     async fn set_downstream_mask(&mut self, cidr: IpCidr){
-        self.base.modify_netif(|state| {
+        self.netif.modify_netif(|state| {
             let netif = &mut state.netifs[1].iface;
             netif.set_any_ip(true);
             netif.update_ip_addrs(|addrs| {addrs.clear(); addrs.push(cidr);});
@@ -372,7 +359,7 @@ impl SysModuleStartup for Com {
     async fn run_once(&mut self) {
         println!("setting up routing:");
         tokio::time::sleep(Duration::from_millis(1000)).await;
-        self.run_routing();
+        let _ = tokio::time::timeout(Duration::from_millis(1000), self.run_routing()).await;
     }
     async fn on_start(&mut self) {
         println!("starting!!");
@@ -382,7 +369,7 @@ impl SysModuleStartup for Com {
             ComType::AdvDownstream => self.configure_downstream().await,
             ComType::Basic => self.configure_basic().await,
         }
-        self.redirect_socket = Some( self.base.raw_direction_socket().await);
+        self.redirect_socket = Some( self.netif.raw_direction_socket().await);
 
         // no-op for now
     }
