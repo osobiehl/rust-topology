@@ -30,10 +30,18 @@ pub type TestingReceiver= UnboundedReceiver<SysmoduleRPC>;
 pub type TestingSender = UnboundedSender<SysmoduleRPC>;
 
 pub type Device = AsyncGatewayDevice<AsyncGateway<Vec<u8>>>;
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum BasicModuleType{
+    HMI,
+    PV,
+    PI,
+}
 pub struct BasicModule {
     pub(super) testing_interface: TestingReceiver,
-    netif: Arc<Mutex<UDPState<Device>>>
+    netif: Arc<Mutex<UDPState<Device>>>,
+    mod_type: BasicModuleType
 }
+
 
 #[async_trait::async_trait]
 impl NetStack<Device> for Arc<Mutex<UDPState<Device>>>{
@@ -59,10 +67,12 @@ impl BasicModule {
     pub fn new(
         netif: Arc<Mutex<UDPState<Device>>>,
         testing_interface: TestingReceiver,
+        mod_type: BasicModuleType,
     ) -> Self {
         Self {
             testing_interface,
             netif,
+            mod_type
         }
     }
     pub async fn socket<T:Into<IpListenEndpoint> + Send> (&self, endpoint: T) -> AsyncSocketHandle<Device, UDP>{
@@ -94,7 +104,7 @@ pub trait SysModuleStartup {
 impl SysModuleStartup for BasicModule {
     async fn on_start(&mut self) {
         let mut socket_internal_bus = self.socket(ADDRESS_ASSIGNMENT_PORT).await;
-        let (val,_req) = socket_internal_bus.receive_with_timeout(Duration::from_millis(1000)).await.expect("module did not receive message on startup");
+        let (val,_req) = socket_internal_bus.receive_with_timeout(Duration::from_millis(2000)).await.expect(& format!("module did not receive message on startup, module: {:?}", &self.mod_type));
         assert!(val.len() == 4, "non-ipv4 message received!");
         let new_ip: Ipv4Address = Ipv4Address::new(val[0], val[1], val[2], val[3]);
         println!("RECV new ip adddr: {}\n\n", new_ip);

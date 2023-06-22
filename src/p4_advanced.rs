@@ -47,10 +47,10 @@ impl P4Advanced {
         }
         else {
             let ( gateway_netif, _ib_gateway) = new_netif(IpCidr::new(TRANSIENT_GATEWAY_ID, 24));
-            let  (pv_, test) = new_module(vec![gateway_netif]);
+            let  (pv_, test) = new_module(vec![gateway_netif], BasicModuleType::PV);
             pv = Some((PV(pv_), test));
         }
-        let (hmi, ib_hmi, hmi_test_tx) = new_internal_module(IpCidr::new(TRANSIENT_HMI_ID, 24));
+        let (hmi, ib_hmi, hmi_test_tx) = new_internal_module(IpCidr::new(TRANSIENT_HMI_ID, 24), BasicModuleType::HMI);
 
         bus.subscribe(ib_hmi);
 

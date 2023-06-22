@@ -29,10 +29,10 @@ pub fn external_bus_netif(addr1: IpCidr, addr2: IpCidr) -> (NetifPair<TestDevice
 
 
 pub fn new_internal_module(
-    initial_address: IpCidr,
+    initial_address: IpCidr, mod_type: BasicModuleType
 ) -> (BasicModule, AsyncGateway<Vec<u8>>, TestingSender) {
     let (netif, gateway) = new_netif(initial_address);
-    let (module, mod_test_tx) = new_module(vec![netif]);
+    let (module, mod_test_tx) = new_module(vec![netif], mod_type);
     return (module, gateway, mod_test_tx)
 
 }
@@ -43,10 +43,10 @@ pub fn new_com(netifs: Vec<NetifPair<TestDevice>>, config: ComType ) -> Com {
 }
 
 
-pub fn new_module(netifs: Vec<NetifPair<TestDevice>>)->(BasicModule, TestingSender){
+pub fn new_module(netifs: Vec<NetifPair<TestDevice>>, mod_type: BasicModuleType)->(BasicModule, TestingSender){
     let udp_1: Arc<Mutex<UDPState<TestDevice>>> = Arc::new(Mutex::new(UDPState::new(netifs) ) );
     let (mod_test_tx, mod_test_rx) = tokio::sync::mpsc::unbounded_channel();
-    let module = BasicModule::new(udp_1, mod_test_rx );
+    let module = BasicModule::new(udp_1, mod_test_rx, mod_type );
     return (module, mod_test_tx)
 }
 

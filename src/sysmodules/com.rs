@@ -233,23 +233,6 @@ impl Com {
 
     }
 
-    async fn set_upstream_address(&mut self, cidr: IpCidr){
-        self.netif.modify_netif(|state| {
-            let netif = &mut state.netifs[0].iface;
-            netif.set_any_ip(true);
-            netif.update_ip_addrs(|addrs| {addrs.clear(); addrs.push(cidr);});
-
-        }).await;
-    }
-
-    async fn set_downstream_mask(&mut self, cidr: IpCidr){
-        self.netif.modify_netif(|state| {
-            let netif = &mut state.netifs[1].iface;
-            netif.set_any_ip(true);
-            netif.update_ip_addrs(|addrs| {addrs.clear(); addrs.push(cidr);});
-
-        }).await;
-    }
 
     fn device_index(address: &Ipv4Address)->u8{
         return address.0[2];
@@ -324,13 +307,15 @@ impl Com {
         let sender_index = Self::device_index(sender);     
         let destination_index = Self::device_index(destination);
 
-        match configuration{
+        let config = match configuration{
             ComType::AdvDownstream => Self::determine_direction_advanced_downstream(sender_index, destination_index),
             ComType::AdvUpstream => Self::determine_direction_advanced_upstream(sender_index, destination_index),
             ComType::Basic => Self::determine_direction_basic(sender_index, destination_index),
             // TODO: this needs to also have ip index
             ComType::HubCom(_) => Self::determine_direction_hub(sender_index, destination_index)
-        }
+        };
+        println!("got direction for config {:?} : {:?}, sender: {}, dest: {}", configuration, config,  sender, destination);
+        return config
     }
 
     async fn run_routing(&mut self){
