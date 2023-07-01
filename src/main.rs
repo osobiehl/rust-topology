@@ -71,11 +71,16 @@ mod test {
     pub use super::*;
 
     use async_communication::AsyncChannel;
+    use futures::future::{select_all, select, join_all};
     pub use net::udp_state::UDPState;
     use smoltcp::iface::Interface;
     use smoltcp::socket::{tcp, udp};
     use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, Ipv4Address, Ipv6Address};
+    use tokio::join;
+    use std::process::exit;
+    use std::rc::Rc;
     use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
     use std::time::Duration;
     use tokio::sync::Mutex;
 
@@ -332,6 +337,8 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_internal_bus_communication() {
+        simple_logger::init_with_level(log::Level::Trace);
+        
         let (dev1, ib_side1) = AsyncGateway::<Vec<u8>>::new_async_device();
         let (dev2, ib_side2) = AsyncGateway::<Vec<u8>>::new_async_device();
         let (dev3, ib_side3) = AsyncGateway::<Vec<u8>>::new_async_device();
@@ -412,6 +419,97 @@ mod test {
         let _ = a.await; // cleanup: OK to panic
     }
 
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_internal_bus_communication_no_order() {
+        simple_logger::init_with_level(log::Level::Debug);
+        
+        let (dev1, ib_side1) = AsyncGateway::<Vec<u8>>::new_async_device();
+        let (dev2, ib_side2) = AsyncGateway::<Vec<u8>>::new_async_device();
+        let (dev3, ib_side3) = AsyncGateway::<Vec<u8>>::new_async_device();
+
+        let mut ib = internal_bus::InternalBus::new();
+        ib.subscribe(ib_side1.gateway);
+        ib.subscribe(ib_side2.gateway);
+        ib.subscribe(ib_side3.gateway);
+
+        let addr_1 = IpAddress::v4(192, 168, 69, 1);
+        let addr_2 = IpAddress::v4(192, 168, 69, 2);
+        let addr_3 = IpAddress::v4(192, 168, 69, 3);
+
+        let ip_1 = IpCidr::new(addr_1.clone(), 24);
+        let ip_2 = IpCidr::new(addr_2.clone(), 24);
+        let ip_3 = IpCidr::new(addr_3.clone(), 24);
+
+        let stack1 = setup_if(ip_1, Box::new(dev1));
+        let stack2 = setup_if(ip_2, Box::new(dev2));
+        let stack3 = setup_if(ip_3, Box::new(dev3));
+
+        let mut udp_1: Arc<Mutex<UDPState<TestDevice>>> =
+            Arc::new(Mutex::new(UDPState::new(vec![stack1])));
+        let mut udp_2: Arc<Mutex<UDPState<TestDevice>>> =
+            Arc::new(Mutex::new(UDPState::new(vec![stack2])));
+        let mut udp_3: Arc<Mutex<UDPState<TestDevice>>> =
+            Arc::new(Mutex::new(UDPState::new(vec![stack3])));
+
+        let a = tokio::spawn(async move {
+            loop {
+                ib.run_once().await
+            }
+        });
+
+        let task_2 = tokio::spawn(async move {
+            let mut socket2 = AsyncSocketHandle::new_udp(6969, udp_2.clone()).await;
+            let a = socket2
+                .receive_with_timeout(std::time::Duration::from_millis(500))
+                .await
+                .expect("did not receive in time");
+            trace!("recv: {:?}", a);
+            let a = socket2
+                .receive_with_timeout(std::time::Duration::from_millis(500))
+                .await
+                .expect("did not receive in time");
+            trace!("recv: {:?}", a);
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        });
+
+        let task_1 = tokio::spawn(async move {
+            let hello = "hello_world!";
+            let mut socket1 = AsyncSocketHandle::new_udp(6969, udp_1.clone()).await;
+            socket1
+                .send(
+                    hello.as_bytes(),
+                    IPEndpoint {
+                        addr: addr_2,
+                        port: 6969,
+                    },
+                )
+                .await;
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        });
+
+        let task_3 = tokio::spawn(async move {
+            let hello = "hello_world!";
+            let mut socket1 = AsyncSocketHandle::new_udp(6969, udp_3.clone()).await;
+            socket1
+                .send(
+                    hello.as_bytes(),
+                    IPEndpoint {
+                        addr: addr_2,
+                        port: 6969,
+                    },
+                )
+                .await;
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        });
+
+        let (t1, t2, t3, ta) = join!(task_1, task_2, task_3, a);
+
+        
+    }
+
+
     #[tokio::test(flavor = "multi_thread")]
     async fn test_raw_sockets() {
         let (mut dev1, mut dev2) = AsyncGateway::<Vec<u8>>::new();
@@ -451,7 +549,7 @@ mod test {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_basic_raw_socket_routing() {
-        simple_logger::init_with_level(log::Level::Trace);
+        
 
         let (dev1, dev2to1) = AsyncGateway::<Vec<u8>>::new();
         let (dev2to3, dev3) = AsyncGateway::<Vec<u8>>::new();
@@ -651,13 +749,23 @@ mod test {
 
         const V_STR: &str = "sample pv value!";
         const PORT: u16 = 1111;
+
+
+        let end_adv = tokio::spawn(async move {
+            basic.start().await;
+        });
+
+        let succeeded = Arc::new(AtomicBool::new(false));
+        let s = succeeded.clone();
+
         HMI.send(Box::new(|sys| {
 
-            return async{
+            return async move{
                 let mut sock = sys.socket(PORT).await;
-                let ans = sock.receive_with_timeout(Duration::from_millis(100)).await.expect("timeout receiving data");
+                let ans = sock.receive_with_timeout(Duration::from_millis(1500)).await.expect("timeout receiving data");
                 println!("receive: {}", std::str::from_utf8(&ans.0).unwrap()  );
                 assert!(ans.0 == V_STR.as_bytes());
+                s.store(true, std::sync::atomic::Ordering::Relaxed);
             }.boxed();
             
         })).unwrap_or_else( |_| panic!("could not send test command!"));
@@ -666,7 +774,7 @@ mod test {
 
             return async{
                 let mut sock = sys.socket(PORT).await;
-                let addr = determine_ip( &Sysmodule::HMI , &Transmitter::Advanced, &sysmodule::ModuleNeighborInfo::Advanced(None, None));
+                let addr = determine_ip( &Sysmodule::HMI , &Transmitter::Basic, &sysmodule::ModuleNeighborInfo::NoNeighbor);
 
                 let ip = IPEndpoint{
                     addr: smoltcp::wire::IpAddress::Ipv4(addr),
@@ -678,19 +786,18 @@ mod test {
         })).unwrap_or_else( |_| panic!("could not send test command!"));
 
 
-        let end_adv = tokio::spawn(async move {
-            basic.start().await;
-        });
 
 
 
-
-
-        let a = end_adv.await;
+        
+        let a =  tokio::time::timeout(Duration::from_millis(6000), end_adv).await;
+        assert!(succeeded.load(std::sync::atomic::Ordering::Relaxed), "flag was not set")
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_multi_module_hello_world() {
+        // simple_logger::init_with_level(log::Level::max());
+
         let (adv, bas) = AsyncGateway::<Vec<u8>>::new();
         let advanced = P4Advanced::new(None, Some(bas));
         let basic = P4Basic::new(Some(adv));
@@ -700,13 +807,18 @@ mod test {
 
         const V_STR: &str = "sample pv value!";
         const PORT: u16 = 1111;
+        let succeeded = Arc::new(AtomicBool::new(false));
+        let s = succeeded.clone();
         HMI.send(Box::new(|sys| {
 
-            return async{
+            return async move{
                 let mut sock = sys.socket(PORT).await;
-                let ans = sock.receive_with_timeout(Duration::from_millis(100)).await.expect("timeout receiving data");
+                let ans = sock.receive_with_timeout(Duration::from_millis(1000)).await.expect("timeout receiving data");
                 println!("receive: {}", std::str::from_utf8(&ans.0).unwrap()  );
                 assert!(ans.0 == V_STR.as_bytes());
+                s.store(true, std::sync::atomic::Ordering::Relaxed);
+                panic!("fast cleanup");
+
             }.boxed();
             
         })).unwrap_or_else( |_| panic!("could not send test command!"));
@@ -715,15 +827,14 @@ mod test {
 
             return async{
                 let mut sock = sys.socket(PORT).await;
-                let addr = determine_ip( &Sysmodule::HMI , &Transmitter::Basic, &sysmodule::ModuleNeighborInfo::Advanced(None, Some(BasicTransmitter{})));
+                let addr = determine_ip( &Sysmodule::HMI , &Transmitter::Advanced, &sysmodule::ModuleNeighborInfo::Advanced(None, Some(BasicTransmitter{})));
 
                 let ip = IPEndpoint{
                     addr: smoltcp::wire::IpAddress::Ipv4(addr),
                     port: PORT
                 };
-                println!("sending to: {:?}", &ip);
-                let ans = sock.send(V_STR.as_bytes()  , ip ).await;
-                tokio::time::sleep(Duration::from_millis(1000)).await;
+                println!("AAAAAAAAAAsending to: {:?}", &ip);
+                let ans: () = sock.send(V_STR.as_bytes()  , ip ).await;
             }.boxed();
             
         })).unwrap_or_else( |_| panic!("could not send test command!"));
@@ -739,9 +850,10 @@ mod test {
 
 
 
+        let end = join_all([end_adv, end_basic]);
+        let a =  tokio::time::timeout(Duration::from_millis(12000), end).await;
+        assert!(succeeded.load(std::sync::atomic::Ordering::Relaxed), "flag was not set")
 
-        let a = end_adv.await;
-        let b = end_basic.await;
     }
 
 }

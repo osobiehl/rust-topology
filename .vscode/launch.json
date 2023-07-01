@@ -29,6 +29,7 @@
             "cargo": {
                 "args": [
                     "test",
+                    "test_single_module_hello_world",
                     "--no-run",
                     "--bin=topology_concept",
                     "--package=topology_concept",

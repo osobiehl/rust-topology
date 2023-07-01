@@ -58,7 +58,11 @@ pub fn spawn_test_sysmodule<M: SysModuleStartup + Send + 'static>(mut module: M)
     let h = tokio::spawn(async move {
         module.on_start().await;
 
-        module.run_once().await;
+        loop{
+            module.run_once().await;
+        }
+
+        
         
     });
     return h;

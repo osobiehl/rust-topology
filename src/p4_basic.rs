@@ -7,6 +7,7 @@ use crate::{
     utils::spawn_test_sysmodule,
 };
 
+use futures::future::join_all;
 use internal_bus::InternalBus;
 
 use crate::net::device::{setup_if, AsyncGatewayDevice};
@@ -72,7 +73,7 @@ impl P4Basic {
         let hmi = spawn_test_sysmodule(self.hmi.0 .0);
         let mut futures = vec![pv, hmi];
 
-        futures.push(spawn_test_sysmodule(self.com));
+        
 
         if let Some(c) = self.pi{
             futures.push(spawn_test_sysmodule(c.0.base));
@@ -83,10 +84,10 @@ impl P4Basic {
                 self.bus.run_once().await;
             }
         });
-        bus.await;
-        for f in futures{
-            let _ = f.await;
-        }
+        futures.push(spawn_test_sysmodule(self.com));
+        futures.push(bus);
+        
+        let _ = join_all(futures).await;
 
 
     }

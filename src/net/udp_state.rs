@@ -3,7 +3,7 @@ use crate::sysmodules::com::Direction;
 
 use futures::FutureExt;
 
-use log::trace;
+use log::{trace, info};
 
 use smoltcp::iface::{SocketHandle, SocketSet};
 use smoltcp::socket::{raw, udp, AnySocket};
@@ -131,6 +131,7 @@ impl SocketAdapter for Raw {
                 .ip_addrs()
                 .iter()
                 .find(|cidr| cidr.contains_addr(&destination)).is_some()).unwrap_or(0);
+            info!("getting position: {}", position);
             return ifaces.get_mut(position).expect("no network interfaces found");
         })
 
@@ -139,7 +140,7 @@ impl SocketAdapter for Raw {
 
 impl SocketAdapter for RawDirection{
     type Output = Vec<u8>;
-    type Destination = Direction;
+    type Destination = usize;
     type InputSocket<'a> = raw::Socket<'a>;
     fn receive<'a>(sock: &mut Self::InputSocket<'a>) -> Result<Self::Output, ()> {
         sock.recv().map(Vec::<u8>::from).map_err(|_| ())
@@ -161,10 +162,10 @@ impl SocketAdapter for RawDirection{
         // raw sockets cannot be closed (?) 
     }
     fn netif_strategy< D: AsyncDevice>( destination: Self::Destination) -> Box<dyn Fn(& mut Vec<NetifPair<D>>) -> & mut NetifPair<D> > {
-     
+        trace!("USING RAW NETIF STRATEGY!!!!!");
         return Box::new(move |ifaces| {
-            
-            return ifaces.get_mut(destination as usize).expect("did not find network interface!")
+            trace!("raw response on destination: {}", &destination);
+            return ifaces.get_mut(destination).expect("did not find network interface!")
         })
 
     }
@@ -187,11 +188,14 @@ A: SocketAdapter + Send {
     fn recv(&mut self) -> AsyncSocketRead<D, A>;
     async fn send(&mut self, data: &[u8], dest: A::Destination);
     async fn receive_with_timeout(&mut self, timeout: Duration) -> Result<A::Output, ()>{
-        let ans: Result<A::Output, ()> = futures::select! {
-            x = self.recv().fuse() => x,
-            _ = tokio::time::sleep(timeout).fuse() => Err(())
-        };
-        return ans;
+         
+        
+        let x = tokio::time::timeout(timeout, self.recv()).await
+            .map_err( |_| ())
+            .map( |a| a.expect("channel closed prematurely"));
+
+        return x
+        
     }
 }
 #[async_trait::async_trait]
@@ -379,7 +383,7 @@ impl<'a, D: AsyncDevice> UDPState<D> {
 
         let udp_handle = self.sockets.add(udp_socket);
         self.handles.push(udp_handle.clone());
-
+        self.poll();
         return udp_handle;
     }
 

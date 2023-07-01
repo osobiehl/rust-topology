@@ -6,6 +6,7 @@ use crate::{
     utils::{spawn_test_sysmodule, new_module, new_netif, new_internal_module, new_com}, net::device::{setup_if, AsyncGatewayDevice},
 };
 
+use futures::future::join_all;
 use internal_bus::InternalBus;
 use smoltcp::wire::IpCidr;
 
@@ -68,12 +69,7 @@ impl P4Advanced {
     pub async fn start(mut self) {
         let mut futures = vec![];
 
-        if let Some(com) = self.adv_to_basic {
-            futures.push(spawn_test_sysmodule(com))
-        }
-        if let Some(com) = self.hub_to_adv {
-            futures.push(spawn_test_sysmodule(com));
-        }
+ 
         if let Some((pv, _)) = self.pv {
             futures.push(spawn_test_sysmodule(pv.0));
         }
@@ -84,10 +80,15 @@ impl P4Advanced {
                 self.bus.run_once().await;
             }
         }));
-
-        for f in futures{
-            let _ = f.await;
+        if let Some(com) = self.adv_to_basic {
+            futures.push(spawn_test_sysmodule(com))
         }
+        if let Some(com) = self.hub_to_adv {
+            futures.push(spawn_test_sysmodule(com));
+        }
+
+        let _ = join_all(futures).await;
+        
        
     }
 }

@@ -4,6 +4,7 @@ use crate::net::device::AsyncGatewayDevice;
 
 use async_trait::async_trait;
 
+use log::info;
 use smoltcp::wire::{IpListenEndpoint, IpCidr, Ipv4Cidr};
 use tokio::sync::Mutex;
 
@@ -104,23 +105,29 @@ pub trait SysModuleStartup {
 impl SysModuleStartup for BasicModule {
     async fn on_start(&mut self) {
         let mut socket_internal_bus = self.socket(ADDRESS_ASSIGNMENT_PORT).await;
-        let (val,_req) = socket_internal_bus.receive_with_timeout(Duration::from_millis(2000)).await.expect(& format!("module did not receive message on startup, module: {:?}", &self.mod_type));
+        if let Ok((val,_req)) = socket_internal_bus.receive_with_timeout(Duration::from_millis(1000)).await{
         assert!(val.len() == 4, "non-ipv4 message received!");
         let new_ip: Ipv4Address = Ipv4Address::new(val[0], val[1], val[2], val[3]);
-        println!("RECV new ip adddr: {}\n\n", new_ip);
+        println!("RECV new ip adddr: {}, module {:?}", new_ip, &self.mod_type);
         self.netif.modify_netif( move |state| {
             state.netifs[0].iface.update_ip_addrs( |addrs| {
                 addrs.clear();
                 addrs.push(IpCidr::Ipv4(Ipv4Cidr::new(new_ip, 24)));
             })
         }).await
+    }
+    else{
+        info!("module did not receive message on startup, module: {:?}", &self.mod_type);
+    }
+    //wait for all other modules
+    tokio::time::sleep(Duration::from_millis(1000)).await;
         // now we have the sent ip addr
 
 
     }
     async fn run_once(&mut self) {
         
-        tokio::time::sleep(Duration::from_millis(1000)).await;
+        // tokio::time::sleep(Duration::from_millis(1000)).await;
         let timeout = tokio::time::timeout(Duration::from_millis(5000), self.testing_interface.recv()).await;
         if let Ok(f) = timeout{
             let closure = f.unwrap();

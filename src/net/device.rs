@@ -1,5 +1,7 @@
+use std::collections::VecDeque;
 use std::time::Duration;
 
+use log::trace;
 use smoltcp::iface::{Interface, Config};
 use smoltcp::phy::{Device, DeviceCapabilities, Medium};
 use smoltcp::time::Instant;
@@ -34,13 +36,13 @@ impl smoltcp::phy::TxToken for STDTx {
 }
 
 pub struct AsyncGatewayDevice<T: AsyncChannel<Vec<u8>>>{
-    pub cached: Vec<Vec<u8>>,
+    pub cached: VecDeque<Vec<u8>>,
     pub gateway: T
 }
 
 impl<T: AsyncChannel<Vec<u8>>> AsyncGatewayDevice<T>{
     pub fn new( gateway:  T) -> Self{
-        return Self { cached: vec![], gateway };
+        return Self { cached: VecDeque::new(), gateway };
     }
 }
 #[async_trait::async_trait]
@@ -73,13 +75,13 @@ pub trait AsyncDevice: Device + AsyncChannel<Vec<u8>>{
 
 impl<T: AsyncChannel<Vec<u8>>> AsyncDevice for AsyncGatewayDevice<T>{
     fn inject_frame(&mut self, frame: Vec<u8>) {
-        self.cached.push(frame);
+        self.cached.push_back(frame);
     }
 }
 
 impl<T: AsyncChannel<Vec<u8>>> Into<AsyncGatewayDevice<T>> for (T, ){
     fn into(self) -> AsyncGatewayDevice<T> {
-        return AsyncGatewayDevice { cached: vec![], gateway: self.0 }
+        return AsyncGatewayDevice { cached: VecDeque::new(), gateway: self.0 }
     }
 }
 
@@ -96,7 +98,7 @@ impl<T: AsyncChannel<Vec<u8>>>  Device for AsyncGatewayDevice<T> {
     }
 
     fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
-        if let Some(v) = self.cached.pop(){
+        if let Some(v) = self.cached.pop_front(){
             return Some((STDRx(v), STDTx(self.gateway.sender())));
         }
         else if let Some(v) = self.gateway.try_receive() {

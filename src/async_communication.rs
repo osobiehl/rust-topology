@@ -70,11 +70,11 @@ impl<T: std::marker::Send + Debug> AsyncChannel<T> for AsyncGateway<T> {
         return self.rx.recv().await.expect("channel closed prematurely");
     }
     async fn receive_with_timeout(&mut self, timeout: Duration) -> Option<T> {
-        let ans = select! {
-            x = self.receive().fuse() => Some(x),
-            _ = tokio::time::sleep(timeout).fuse() => None
-        };
-        return ans;
+
+        let x = tokio::time::timeout(timeout, self.receive()).await.ok();
+
+
+        return x;
     }
     fn try_receive(&mut self) -> Option<T>{
         self.rx.try_recv().ok()
