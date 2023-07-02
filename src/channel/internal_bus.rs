@@ -1,7 +1,7 @@
 use super::async_communication::AsyncChannel;
 use super::async_communication::{AsyncGateway};
 use futures::future::select_all;
-use log::{trace, info};
+
 
 pub struct InternalBus {
     subscribers: Vec<AsyncGateway<Vec<u8>>>,

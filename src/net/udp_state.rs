@@ -1,5 +1,5 @@
 use crate::channel::async_communication::AsyncChannel;
-use crate::sysmodules::com::Direction;
+
 
 use futures::FutureExt;
 
@@ -119,7 +119,7 @@ impl SocketAdapter for Raw {
 
         let _ = sock.send_slice(&data);
     }
-    fn close<'a>(sock: &mut Self::InputSocket<'a>){
+    fn close<'a>(_sock: &mut Self::InputSocket<'a>){
         // raw sockets cannot be closed (?) 
     }
     fn netif_strategy< D: AsyncDevice>( destination: Self::Destination) -> Box<dyn Fn(& mut Vec<NetifPair<D>>) -> & mut NetifPair<D> > {
@@ -158,7 +158,7 @@ impl SocketAdapter for RawDirection{
 
         let _ = sock.send_slice(&data);
     }
-    fn close<'a>(sock: &mut Self::InputSocket<'a>){
+    fn close<'a>(_sock: &mut Self::InputSocket<'a>){
         // raw sockets cannot be closed (?) 
     }
     fn netif_strategy< D: AsyncDevice>( destination: Self::Destination) -> Box<dyn Fn(& mut Vec<NetifPair<D>>) -> & mut NetifPair<D> > {

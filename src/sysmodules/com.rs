@@ -1,15 +1,15 @@
 use std::time::Duration;
 
-use super::common::{BasicModule, SysModuleStartup, TRANSIENT_GATEWAY_ID, Device};
-use crate::channel;
+use super::common::{SysModuleStartup, TRANSIENT_GATEWAY_ID, Device};
+
 use crate::channel::async_communication::AsyncGateway;
 use crate::net::device::AsyncGatewayDevice;
 use crate::net::udp_state::{NetStack, UDP, IPEndpoint, AsyncSocketHandle, RawDirection, UDPState};
 use super::discovery::ModuleNeighborInfo::{Advanced, Basic, Hub, NoNeighbor};
 use super::discovery::{BasicTransmitter, HubIndex, ModuleNeighborInfo, determine_ip, Sysmodule, Transmitter};
 use crate::sysmodules::common::{TRANSIENT_PI_ID, TRANSIENT_PV_ID, TRANSIENT_HMI_ID, ADDRESS_ASSIGNMENT_PORT};
-use futures::future;
-use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, IpEndpoint, Ipv4Address, Ipv6Address, Ipv4Cidr, Ipv4Packet, Ipv4Repr};
+
+use smoltcp::wire::{IpAddress, IpCidr, IpEndpoint, Ipv4Address, Ipv4Packet};
 use crate::net::udp_state::AsyncSocket;
 use log::{error, info};
 use std::sync::Arc;
@@ -204,7 +204,7 @@ impl Com {
         let parent = socket_parent.receive_with_timeout(WAIT_DEFAULT).await;
 
         let mut parent_info: ModuleNeighborInfo = ModuleNeighborInfo::NoNeighbor;
-        if let Ok((val, endpoint)) = parent {
+        if let Ok((val, _endpoint)) = parent {
             parent_info = val
                 .try_into()
                 .expect("did not receive module info on external bus");

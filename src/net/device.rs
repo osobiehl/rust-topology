@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::time::Duration;
 
-use log::trace;
+
 use smoltcp::iface::{Interface, Config};
 use smoltcp::phy::{Device, DeviceCapabilities, Medium};
 use smoltcp::time::Instant;

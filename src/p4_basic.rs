@@ -1,7 +1,7 @@
 
 use crate::channel::{async_communication::AsyncGateway,
 internal_bus::InternalBus};
-use crate::utils::{new_internal_module, new_netif, new_module, new_com};
+use crate::utils::{new_internal_module, new_netif, new_com};
 use crate::{
     sysmodules::{com::*, common::*},
     utils::spawn_test_sysmodule,
@@ -35,8 +35,8 @@ impl P4Basic {
         bus.subscribe(ib_gateway);
 
         // this should be an enum but oh well
-        let mut com: Com;
-        let mut Pi: Option<(PI, TestingSender)> = None;
+        let com: Com;
+        let Pi: Option<(PI, TestingSender)> = None;
         let mut com_vec = vec![gateway_netif];
         if let Some(external_bus) = parent{
             let net: crate::net::device::NetifPair<AsyncGatewayDevice<AsyncGateway<Vec<u8>>>> = setup_if(ComType::Basic.external_bus_ip(), Box::new(AsyncGatewayDevice::new(external_bus)) );

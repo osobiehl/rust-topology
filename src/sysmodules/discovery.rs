@@ -100,9 +100,9 @@ pub fn determine_ip(
             Ipv4Address::new(idx.to_ip_octet(), 168, 1, sysmodule_octet)
         }
 
-        (Transmitter::Hub(idx), ModuleNeighborInfo::NoNeighbor) => panic!("empty hub"),
+        (Transmitter::Hub(_idx), ModuleNeighborInfo::NoNeighbor) => panic!("empty hub"),
         // hub has identifier 3 so it is easy to route
-        (Transmitter::Hub(idx), other) => {
+        (Transmitter::Hub(idx), _other) => {
             Ipv4Address::new(idx.to_ip_octet(), 168, 3, sysmodule_octet)
 
         }
