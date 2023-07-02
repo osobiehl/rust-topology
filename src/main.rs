@@ -617,25 +617,6 @@ mod test {
             .expect("NO NEW DATA RECEIVED");
     }
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_advanced_basic() {
-        let (adv, bas) = AsyncGateway::<Vec<u8>>::new();
-
-        let advanced = P4Advanced::new(None, Some(adv));
-        let basic = P4Basic::new(Some(bas));
-
-        let end_adv = tokio::spawn(async move {
-            advanced.start().await;
-        });
-        let end = tokio::spawn(async move {
-            basic.start().await;
-        });
-
-        let a = end_adv.await;
-        end.await;
-
-
-    }
 
     use sysmodules::com::{Com,Direction};
     #[test]
@@ -741,7 +722,7 @@ mod test {
     use net::udp_state::NetStack;
     use sysmodule::{Sysmodule, Transmitter};
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_single_module_hello_world() {
+    async fn test_single_module_hello_world_basic() {
         let (adv, bas) = AsyncGateway::<Vec<u8>>::new();
         let basic = P4Basic::new(None);
         let HMI = basic.hmi.1.clone();
@@ -790,9 +771,64 @@ mod test {
 
 
         
-        let a =  tokio::time::timeout(Duration::from_millis(6000), end_adv).await;
+        let a =  tokio::time::timeout(Duration::from_millis(500), end_adv).await;
         assert!(succeeded.load(std::sync::atomic::Ordering::Relaxed), "flag was not set")
     }
+
+    // #[tokio::test(flavor = "multi_thread")]
+    // async fn test_single_module_hello_world_adv() {
+    //     simple_logger::init_with_level(log::Level::max());
+
+    //     let basic = P4Advanced::new(None, None);
+    //     let HMI = basic.hmi.1.clone();
+    //     let PV = basic.pv.as_ref().unwrap().1.clone();
+
+    //     const V_STR: &str = "sample pv value!";
+    //     const PORT: u16 = 1111;
+
+
+    //     let end_adv = tokio::spawn(async move {
+    //         basic.start().await;
+    //     });
+
+    //     let succeeded = Arc::new(AtomicBool::new(false));
+    //     let s = succeeded.clone();
+
+    //     HMI.send(Box::new(|sys| {
+
+    //         return async move{
+    //             let mut sock = sys.socket(PORT).await;
+    //             let ans = sock.receive_with_timeout(Duration::from_millis(1500)).await.expect("timeout receiving data");
+    //             println!("receive: {}", std::str::from_utf8(&ans.0).unwrap()  );
+    //             assert!(ans.0 == V_STR.as_bytes());
+    //             s.store(true, std::sync::atomic::Ordering::Relaxed);
+    //         }.boxed();
+            
+    //     })).unwrap_or_else( |_| panic!("could not send test command!"));
+
+    //     PV.send(Box::new(|sys| {
+
+    //         return async{
+    //             let mut sock = sys.socket(PORT).await;
+    //             let addr = determine_ip( &Sysmodule::HMI , &Transmitter::Advanced, &sysmodule::ModuleNeighborInfo::Advanced(None, None));
+
+    //             let ip = IPEndpoint{
+    //                 addr: smoltcp::wire::IpAddress::Ipv4(addr),
+    //                 port: PORT
+    //             };
+    //             let ans = sock.send(V_STR.as_bytes()  , ip ).await;
+    //         }.boxed();
+            
+    //     })).unwrap_or_else( |_| panic!("could not send test command!"));
+
+
+
+
+
+        
+    //     let a =  tokio::time::timeout(Duration::from_millis(6000), end_adv).await;
+    //     assert!(succeeded.load(std::sync::atomic::Ordering::Relaxed), "flag was not set")
+    // }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_multi_module_hello_world() {
@@ -839,19 +875,20 @@ mod test {
             
         })).unwrap_or_else( |_| panic!("could not send test command!"));
 
+        let end_basic = tokio::spawn(async move {
+            basic.start().await;
+        });
 
         let end_adv = tokio::spawn(async move {
             advanced.start().await;
         });
-        let end_basic = tokio::spawn(async move {
-            basic.start().await;
-        });
+
 
 
 
 
         let end = join_all([end_adv, end_basic]);
-        let a =  tokio::time::timeout(Duration::from_millis(12000), end).await;
+        let a =  tokio::time::timeout(Duration::from_millis(300), end).await;
         assert!(succeeded.load(std::sync::atomic::Ordering::Relaxed), "flag was not set")
 
     }

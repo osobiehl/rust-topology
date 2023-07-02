@@ -105,7 +105,7 @@ pub trait SysModuleStartup {
 impl SysModuleStartup for BasicModule {
     async fn on_start(&mut self) {
         let mut socket_internal_bus = self.socket(ADDRESS_ASSIGNMENT_PORT).await;
-        if let Ok((val,_req)) = socket_internal_bus.receive_with_timeout(Duration::from_millis(1000)).await{
+        if let Ok((val,_req)) = socket_internal_bus.receive_with_timeout(Duration::from_millis(30)).await{
         assert!(val.len() == 4, "non-ipv4 message received!");
         let new_ip: Ipv4Address = Ipv4Address::new(val[0], val[1], val[2], val[3]);
         println!("RECV new ip adddr: {}, module {:?}", new_ip, &self.mod_type);
@@ -120,7 +120,7 @@ impl SysModuleStartup for BasicModule {
         info!("module did not receive message on startup, module: {:?}", &self.mod_type);
     }
     //wait for all other modules
-    tokio::time::sleep(Duration::from_millis(1000)).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
         // now we have the sent ip addr
 
 

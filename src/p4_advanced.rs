@@ -47,9 +47,10 @@ impl P4Advanced {
             hub2adv = Some(new_com(vec![gateway_netif, net], ComType::AdvUpstream));
         }
         else {
-            let ( gateway_netif, _ib_gateway) = new_netif(IpCidr::new(TRANSIENT_GATEWAY_ID, 24));
+            let ( gateway_netif, ib_gateway) = new_netif(IpCidr::new(TRANSIENT_GATEWAY_ID, 24));
             let  (pv_, test) = new_module(vec![gateway_netif], BasicModuleType::PV);
             pv = Some((PV(pv_), test));
+            bus.subscribe(ib_gateway);
         }
         let (hmi, ib_hmi, hmi_test_tx) = new_internal_module(IpCidr::new(TRANSIENT_HMI_ID, 24), BasicModuleType::HMI);
 
