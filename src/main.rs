@@ -1,11 +1,8 @@
 #![feature(async_closure)]
-mod async_communication;
-mod communication;
-mod internal_bus;
+mod channel;
 mod net;
 mod p4_advanced;
 mod p4_basic;
-mod sysmodule;
 mod sysmodules;
 mod utils;
 
@@ -14,8 +11,7 @@ pub type TestDevice = AsyncGatewayDevice<AsyncGateway<Vec<u8>>>;
 
 use std::net::Ipv4Addr;
 
-use async_communication::{AsyncGateway, DeadExternalBus};
-use communication::IdentityResolver;
+use channel::async_communication::{AsyncGateway, DeadExternalBus};
 
 use futures::FutureExt;
 use p4_advanced::P4Advanced;
@@ -23,50 +19,25 @@ use p4_basic::P4Basic;
 
 use tokio::task::JoinHandle;
 
-use crate::async_communication::SysmoduleRPC;
-fn spawn_sysmodule(mut sysmodule: Box<dyn IdentityResolver + Send>) -> JoinHandle<()> {
-    tokio::task::spawn(async move {
-        sysmodule.discover_identity().await;
-    })
-}
+
+use channel::async_communication::SysmoduleRPC;
+
 #[tokio::main]
 async fn main() {
 
-    // let (basic, adv) = AsyncGateway::new();
-    // let basic = P4Basic::new(Box::new(basic));
 
-    // let dead = DeadExternalBus {};
-    // let advanced = P4Advanced::new(Some(Box::new(dead)), Some(Box::new(adv)));
-    // let _hmi_send = advanced.hmi.1.clone();
-
-    // let end_adv = tokio::spawn(async move {
-    //     advanced.start().await;
-    // });
-    // let end = tokio::spawn(async move {
-    //     basic.start().await;
-    // });
-
-    // let mut f = async move |sys: &mut dyn SysModule| {sys.send((Ipv4Addr::new(0,0,0,0), "hello".to_string()))};
-    // let func: SysmoduleRPC = Box::new( move |sys: &mut dyn SysModule|
-    // {
-    //     return async
-    //     {
-    //         sys.send((Ipv4Addr::new(0,0,0,0), "hello from hmi".to_string()));
-
-    //     }.boxed()
-    // });
-
-    // hmi_send.send(
-    // func);
-
-    // end.await;
-    // end_adv.await;
 }
 
 mod test {
+    use crate::channel::internal_bus;
     use crate::net::udp_state::IPEndpoint;
     use crate::p4_basic::P4Basic;
-    use crate::sysmodule::{determine_ip, BasicTransmitter};
+    use crate::sysmodules::discovery::{determine_ip, BasicTransmitter};
+    use crate::sysmodules::discovery;
+
+    use self::channel::async_communication;
+    use self::channel::internal_bus::InternalBus;
+    use self::sysmodules::discovery::ModuleNeighborInfo;
 
     pub use super::*;
 
@@ -343,7 +314,7 @@ mod test {
         let (dev2, ib_side2) = AsyncGateway::<Vec<u8>>::new_async_device();
         let (dev3, ib_side3) = AsyncGateway::<Vec<u8>>::new_async_device();
 
-        let mut ib = internal_bus::InternalBus::new();
+        let mut ib = InternalBus::new();
         ib.subscribe(ib_side1.gateway);
         ib.subscribe(ib_side2.gateway);
         ib.subscribe(ib_side3.gateway);
@@ -428,7 +399,7 @@ mod test {
         let (dev2, ib_side2) = AsyncGateway::<Vec<u8>>::new_async_device();
         let (dev3, ib_side3) = AsyncGateway::<Vec<u8>>::new_async_device();
 
-        let mut ib = internal_bus::InternalBus::new();
+        let mut ib = InternalBus::new();
         ib.subscribe(ib_side1.gateway);
         ib.subscribe(ib_side2.gateway);
         ib.subscribe(ib_side3.gateway);
@@ -720,7 +691,7 @@ mod test {
 
     use sysmodules::common::{BasicModule};
     use net::udp_state::NetStack;
-    use sysmodule::{Sysmodule, Transmitter};
+    use sysmodules::discovery::{Sysmodule, Transmitter};
     #[tokio::test(flavor = "multi_thread")]
     async fn test_single_module_hello_world_basic() {
         let (adv, bas) = AsyncGateway::<Vec<u8>>::new();
@@ -755,7 +726,7 @@ mod test {
 
             return async{
                 let mut sock = sys.socket(PORT).await;
-                let addr = determine_ip( &Sysmodule::HMI , &Transmitter::Basic, &sysmodule::ModuleNeighborInfo::NoNeighbor);
+                let addr = determine_ip( &Sysmodule::HMI , &Transmitter::Basic, &ModuleNeighborInfo::NoNeighbor);
 
                 let ip = IPEndpoint{
                     addr: smoltcp::wire::IpAddress::Ipv4(addr),
@@ -863,7 +834,7 @@ mod test {
 
             return async{
                 let mut sock = sys.socket(PORT).await;
-                let addr = determine_ip( &Sysmodule::HMI , &Transmitter::Advanced, &sysmodule::ModuleNeighborInfo::Advanced(None, Some(BasicTransmitter{})));
+                let addr = determine_ip( &Sysmodule::HMI , &Transmitter::Advanced, &ModuleNeighborInfo::Advanced(None, Some(BasicTransmitter{})));
 
                 let ip = IPEndpoint{
                     addr: smoltcp::wire::IpAddress::Ipv4(addr),

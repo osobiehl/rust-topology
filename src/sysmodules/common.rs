@@ -1,4 +1,4 @@
-use crate::async_communication::{AsyncGateway, SysmoduleRPC};
+use crate::channel::async_communication::{AsyncGateway, SysmoduleRPC};
 use crate::net::device::AsyncGatewayDevice;
 
 
@@ -119,15 +119,13 @@ impl SysModuleStartup for BasicModule {
     else{
         info!("module did not receive message on startup, module: {:?}", &self.mod_type);
     }
-    //wait for all other modules
+    //wait for all other modules to finish address assignment
     tokio::time::sleep(Duration::from_millis(100)).await;
-        // now we have the sent ip addr
 
 
     }
     async fn run_once(&mut self) {
         
-        // tokio::time::sleep(Duration::from_millis(1000)).await;
         let timeout = tokio::time::timeout(Duration::from_millis(5000), self.testing_interface.recv()).await;
         if let Ok(f) = timeout{
             let closure = f.unwrap();

@@ -1,11 +1,12 @@
 use std::time::Duration;
 
 use super::common::{BasicModule, SysModuleStartup, TRANSIENT_GATEWAY_ID, Device};
-use crate::async_communication::AsyncGateway;
+use crate::channel;
+use crate::channel::async_communication::AsyncGateway;
 use crate::net::device::AsyncGatewayDevice;
 use crate::net::udp_state::{NetStack, UDP, IPEndpoint, AsyncSocketHandle, RawDirection, UDPState};
-use crate::sysmodule::ModuleNeighborInfo::{Advanced, Basic, Hub, NoNeighbor};
-use crate::sysmodule::{BasicTransmitter, HubIndex, ModuleNeighborInfo, determine_ip, Sysmodule, Transmitter};
+use super::discovery::ModuleNeighborInfo::{Advanced, Basic, Hub, NoNeighbor};
+use super::discovery::{BasicTransmitter, HubIndex, ModuleNeighborInfo, determine_ip, Sysmodule, Transmitter};
 use crate::sysmodules::common::{TRANSIENT_PI_ID, TRANSIENT_PV_ID, TRANSIENT_HMI_ID, ADDRESS_ASSIGNMENT_PORT};
 use futures::future;
 use smoltcp::wire::{EthernetAddress, IpAddress, IpCidr, IpEndpoint, Ipv4Address, Ipv6Address, Ipv4Cidr, Ipv4Packet, Ipv4Repr};
@@ -135,8 +136,8 @@ impl Com {
 
     async fn configure_downstream(&mut self) {
         let mut socket_external_bus: crate::net::udp_state::AsyncSocketHandle<
-            crate::net::device::AsyncGatewayDevice<
-                crate::async_communication::AsyncGateway<Vec<u8>>,
+            AsyncGatewayDevice<
+                AsyncGateway<Vec<u8>>,
                
             >,
             UDP> = self.netif.socket(EXTERNAL_BUS_TRANSIENT_PORT).await;

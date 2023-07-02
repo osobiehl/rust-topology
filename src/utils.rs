@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::async_communication::AsyncGateway;
+use crate::channel::async_communication::AsyncGateway;
 use crate::TestDevice;
 use crate::net::device::{NetifPair, setup_if, AsyncGatewayDevice};
 use crate::net::udp_state::UDPState;

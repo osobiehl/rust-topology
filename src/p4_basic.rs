@@ -1,14 +1,13 @@
 
-use crate::async_communication::AsyncGateway;
+use crate::channel::{async_communication::AsyncGateway,
+internal_bus::InternalBus};
 use crate::utils::{new_internal_module, new_netif, new_module, new_com};
 use crate::{
-    internal_bus,
     sysmodules::{com::*, common::*},
     utils::spawn_test_sysmodule,
 };
 
 use futures::future::join_all;
-use internal_bus::InternalBus;
 
 use crate::net::device::{setup_if, AsyncGatewayDevice};
 use smoltcp::wire::{IpCidr};

@@ -1,5 +1,5 @@
-use crate::async_communication::AsyncChannel;
-use crate::async_communication::{AsyncGateway};
+use super::async_communication::AsyncChannel;
+use super::async_communication::{AsyncGateway};
 use futures::future::select_all;
 use log::{trace, info};
 
@@ -22,8 +22,6 @@ impl InternalBus {
         let (event, index, remaining) = select_all(futures).await;
         drop(remaining);
 
-
-        // println!("internal bus: received: {:?}", &event);
        
 
         let l = self.subscribers.len();

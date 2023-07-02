@@ -1,17 +1,15 @@
 
 use crate::{
-    async_communication::{AsyncGateway},
-    internal_bus,
+    channel::async_communication::{AsyncGateway},
+    channel::internal_bus::InternalBus,
     sysmodules::{com::*, common::*},
     utils::{spawn_test_sysmodule, new_module, new_netif, new_internal_module, new_com}, net::device::{setup_if, AsyncGatewayDevice},
 };
 
 use futures::future::join_all;
-use internal_bus::InternalBus;
 use smoltcp::wire::IpCidr;
 
 
-// basic p4
 pub struct P4Advanced{
     pub pv: Option<(PV, TestingSender)>,
     pub hub_to_adv: Option<Com>,

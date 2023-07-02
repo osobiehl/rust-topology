@@ -61,6 +61,7 @@ pub trait AsyncChannel<T>: Send {
 
     fn sender(&self) -> UnboundedSender<T>;
 }
+
 #[async_trait::async_trait]
 impl<T: std::marker::Send + Debug> AsyncChannel<T> for AsyncGateway<T> {
     fn send(&mut self, msg: T) {

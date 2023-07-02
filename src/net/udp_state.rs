@@ -1,4 +1,4 @@
-use crate::async_communication::AsyncChannel;
+use crate::channel::async_communication::AsyncChannel;
 use crate::sysmodules::com::Direction;
 
 use futures::FutureExt;
